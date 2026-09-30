@@ -98,6 +98,9 @@ summary{cursor:pointer;font-weight:600}
 .drop{outline:3px dashed var(--brass);outline-offset:-8px}
 .hot{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--rec);border-radius:4px;padding:4px 6px}
 .status.warn{color:#ffb3b3}
+.saved{font-size:12px;color:var(--v3);min-height:1.2em;margin-top:2px}
+.saved:not(:empty)::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:6px;vertical-align:1px}
+.saved.bad{color:#ffb3b3}
 .syncrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
 .synclabel{font:500 13px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .syncpanel{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);display:flex;flex-direction:column;gap:10px}
@@ -133,6 +136,7 @@ summary{cursor:pointer;font-weight:600}
       <div class="label">Beat</div>
       <div class="beatname" id="beatName">Building demo beat…</div>
       <div class="beatmeta" id="beatMeta">&nbsp;</div>
+      <div class="saved" id="saved" role="status"></div>
     </div>
     <label class="btn primary" for="beatFile">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>
@@ -221,7 +225,7 @@ summary{cursor:pointer;font-weight:600}
       <li><b>Headphones on</b>Without them the mic picks up the beat and your vocal gets muddy.</li>
       <li><b>Wired beats Bluetooth</b>Bluetooth earbuds add a lot of delay. Wired headphones keep you on time.</li>
       <li><b>Hand's width from the mic</b>On a phone, hold it about a hand away and a little below your mouth.</li>
-      <li><b>Keep this tab open</b>Takes live in this page until you download. Closing it clears the session.</li>
+      <li><b>Come back anytime</b>Your song saves on this device after every take. Got a call? Open the same link later and pick up where you left off. Download to keep a copy for good.</li>
     </ul>
   </section>
 </div>
@@ -252,7 +256,8 @@ const S = {
   pos:0, playing:false, t0:0, playFrom:0, sources:[],
   rec:null, mic:null, recNode:null, analyser:null, monitorGain:null, workletLoaded:false,
   comp:0, compTouched:false, undo:[], preroll:2, headphonesOk:false,
-  beatVol:100, vocalVol:100, autoEst:null, phones:null, hotUntil:0
+  beatVol:100, vocalVol:100, autoEst:null, phones:null, hotUntil:0,
+  beatBytes:null, isDemo:true, beatDirty:false, beatMetaText:'', removedIds:[], saveReady:false, interrupted:false, micSrc:null
 };
 const BT_DEFAULT_MS = 250;
 const store = {
@@ -309,6 +314,9 @@ function ensureCtx(){
     const C = window.AudioContext || window.webkitAudioContext;
     const ctx = new C({latencyHint:'interactive'});
     S.ctx = ctx;
+    ctx.onstatechange = () => {
+      if (ctx.state !== 'running' && (S.rec || S.playing)){ if (S.rec) S.interrupted = true; stopAll(); }
+    };
     const gph = buildGraph(ctx, true);
     S.beatGain = ctx.createGain(); S.beatGain.connect(gph.beatIn);
     S.vocalBus = ctx.createGain(); S.vocalBus.connect(gph.vocalIn);
@@ -363,18 +371,111 @@ function peaksOf(buf){
   if (max > 0) for (let b = 0; b < N; b++) out[b] /= max;
   return out;
 }
-async function setBeat(buf, name, meta){
+async function setBeat(buf, name, meta, bytes){
   if (S.tracks.length){
     const ok = await ask({title:'Swap the beat?', body:'<p>Loading a new beat starts a new song and clears the vocals you recorded. Download anything you want to keep first.</p>', ok:'Swap beat', cancel:'Keep this one'});
     if (!ok) return false;
   }
   stopAll();
+  for (const t of S.tracks){ S.removedIds.push(t.id); if (t.node){ try { t.node.disconnect(); } catch(e){} } }
   S.tracks = []; S.undo = []; S.layerCount = 0;
-  S.beat = buf; S.beatName = name; S.beatPeaks = peaksOf(buf); S.pos = 0;
+  applyBeat(buf, name, meta);
+  S.beatBytes = bytes || null; S.isDemo = !bytes; S.beatDirty = true;
+  queueSave();
+  return true;
+}
+function applyBeat(buf, name, meta){
+  S.beatGen = (S.beatGen || 0) + 1;
+  S.beat = buf; S.beatName = name; S.beatMetaText = meta || ''; S.beatPeaks = peaksOf(buf); S.pos = 0;
   $('#beatName').textContent = name;
   $('#beatMeta').textContent = (meta ? meta + ' · ' : '') + fmt(buf.duration).replace(/\.\d$/, '') + ' long';
   renderRows(); updateUI(); draw();
-  return true;
+}
+
+/* ---------- save on this device (IndexedDB) ---------- */
+const DB = {
+  db:null,
+  open(){
+    if (this.db) return Promise.resolve(this.db);
+    return new Promise((res, rej) => {
+      let r; try { r = indexedDB.open('beat-booth', 1); } catch(e){ rej(e); return; }
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => { this.db = r.result; res(this.db); };
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async run(mode, fn){
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('kv', mode), st = tx.objectStore('kv'); let out;
+      const q = fn(st); if (q) q.onsuccess = () => { out = q.result; };
+      tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+    });
+  },
+  get(k){ return this.run('readonly', st => st.get(k)); },
+  set(k, v){ return this.run('readwrite', st => st.put(v, k)); },
+  del(k){ return this.run('readwrite', st => st.delete(k)); }
+};
+function toI16(f){ const o = new Int16Array(f.length); for (let i = 0; i < f.length; i++){ const s = f[i] < -1 ? -1 : f[i] > 1 ? 1 : f[i]; o[i] = s < 0 ? s*0x8000 : s*0x7FFF; } return o; }
+function fromI16(a, fromSr, toSr){
+  if (fromSr === toSr){ const o = new Float32Array(a.length); for (let i = 0; i < a.length; i++) o[i] = a[i]/0x8000; return o; }
+  const ratio = fromSr/toSr, n = Math.floor(a.length/ratio), o = new Float32Array(n);
+  for (let i = 0; i < n; i++){ const x = i*ratio, j = Math.floor(x), f = x - j; o[i] = ((a[j] || 0)*(1 - f) + (a[j+1] || 0)*f)/0x8000; }
+  return o;
+}
+let saveTimer = null, saveChain = Promise.resolve();
+function queueSave(delay = 500){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveChain = saveChain.then(saveSession, saveSession); }, delay);
+}
+function saveNow(){ clearTimeout(saveTimer); saveChain = saveChain.then(saveSession, saveSession); return saveChain; }
+async function saveSession(){
+  if (!S.beat || !S.saveReady) return;
+  try {
+    if (S.beatDirty){ await DB.set('beat', S.isDemo ? null : S.beatBytes); S.beatDirty = false; }
+    for (const t of S.tracks) if (t.dirty){ await DB.set('pcm:' + t.id, toI16(t.data)); t.dirty = false; }
+    const gone = S.removedIds.splice(0); for (const id of gone) await DB.del('pcm:' + id);
+    await DB.set('session', {
+      v:1, beatName:S.beatName, beatMeta:S.beatMetaText, isDemo:S.isDemo, beatVol:S.beatVol, vocalVol:S.vocalVol,
+      pos: Math.min(S.pos, S.beat.duration), layerCount:S.layerCount, nextId:S.nextId, savedAt:Date.now(),
+      tracks: S.tracks.map(t => ({id:t.id, name:t.name, lead:t.lead, start:t.start, sr:S.ctx ? S.ctx.sampleRate : 48000, vol:t.vol, muted:t.muted, color:t.color, autoGain:t.autoGain}))
+    });
+    $('#saved').textContent = S.tracks.length ? 'Saved on this device' : '';
+    $('#saved').classList.remove('bad');
+  } catch (e){
+    $('#saved').textContent = "Couldn't save on this device. Download your song to keep it.";
+    $('#saved').classList.add('bad');
+  }
+}
+async function restoreSession(){
+  let meta;
+  try { meta = await DB.get('session'); } catch(e){ return false; }
+  if (!meta || !meta.beatName || !meta.tracks) return false;
+  if (meta.isDemo && !meta.tracks.length) return false;
+  try {
+    const ctx = ensureCtx();
+    let buf, bytes = null;
+    if (meta.isDemo) buf = await makeDemoBeat();
+    else { bytes = await DB.get('beat'); if (!bytes) return false; buf = await decode(bytes.slice(0)); }
+    applyBeat(buf, meta.beatName, meta.beatMeta);
+    S.beatBytes = bytes; S.isDemo = !!meta.isDemo;
+    for (const tm of meta.tracks){
+      const pcm = await DB.get('pcm:' + tm.id); if (!pcm) continue;
+      const scale = ctx.sampleRate/(tm.sr || ctx.sampleRate);
+      const t = {id:tm.id, lead:tm.lead, name:tm.name, start:Math.round(tm.start*scale), data:fromI16(pcm, tm.sr || ctx.sampleRate, ctx.sampleRate),
+        vol:tm.vol, muted:tm.muted, color:tm.color, buf:null, peaks:null, node:null, autoGain:tm.autoGain || 1, dirty: scale !== 1};
+      S.tracks.push(t); attachTrackNode(t);
+    }
+    S.nextId = Math.max(meta.nextId || 1, ...S.tracks.map(t => t.id + 1));
+    S.layerCount = meta.layerCount || 0; S.beatVol = meta.beatVol ?? 100; S.vocalVol = meta.vocalVol ?? 100;
+    S.pos = meta.pos || 0;
+    applyLevels(); renderRows(); updateUI(); draw();
+    $('#saved').textContent = S.tracks.length ? 'Saved on this device' : '';
+    setStatus(S.tracks.length
+      ? 'Welcome back. Your song is right where you left it. Hit play, or keep recording from the playhead.'
+      : 'Welcome back. Your beat is loaded from last time. Put on headphones and hit Record vocals.');
+    return true;
+  } catch (e){ return false; }
 }
 function decode(ab){
   return new Promise((res, rej) => {
@@ -387,8 +488,10 @@ async function loadBeatFile(file){
   ensureCtx();
   setStatus('Loading ' + file.name + '…');
   try {
-    const buf = await decode(await file.arrayBuffer());
-    if (await setBeat(buf, file.name.replace(/\.[^.]+$/, ''), 'Your beat')) setStatus('Beat loaded. Put on headphones and hit Record vocals.');
+    const ab = await file.arrayBuffer();
+    const bytes = ab.slice(0);
+    const buf = await decode(ab);
+    if (await setBeat(buf, file.name.replace(/\.[^.]+$/, ''), 'Your beat', bytes)) setStatus('Beat loaded. Put on headphones and hit Record vocals.');
   } catch (e){
     setStatus("Couldn't read that file. MP3, WAV or M4A work best.");
   }
@@ -444,7 +547,9 @@ async function makeDemoBeat(){
 async function loadDemo(){
   setStatus('Building demo beat…');
   try {
+    const gen = S.beatGen;
     const buf = await makeDemoBeat();
+    if (gen !== S.beatGen) return;
     if (await setBeat(buf, 'Demo beat', '90 BPM · 4-bar intro')) setStatus('Demo beat ready. Hit play to hear it, or load your own beat.');
   } catch (e){
     $('#beatName').textContent = 'No beat loaded';
@@ -530,6 +635,7 @@ function stopAll(){
   if (S.playing){ S.pos = Math.min(curPos(), S.beat ? S.beat.duration : 0); }
   stopSources(); S.playing = false;
   updateUI(); draw();
+  queueSave(1000);
 }
 function togglePlay(){
   if (!S.beat) return;
@@ -588,7 +694,12 @@ async function ensureMic(){
     }
   } catch (e){ setStatus('Could not start the recorder in this browser. Try Chrome or Safari.'); return false; }
   S.mic = stream;
+  stream.getAudioTracks().forEach(t => t.addEventListener('ended', () => {
+    if (S.rec){ S.interrupted = true; stopAll(); }
+    releaseMic();
+  }));
   const src = ctx.createMediaStreamSource(stream);
+  S.micSrc = src;
   const node = new AudioWorkletNode(ctx, 'booth-rec', {numberOfInputs:1, numberOfOutputs:1, outputChannelCount:[1]});
   const sink = ctx.createGain(); sink.gain.value = 0;
   src.connect(node); node.connect(sink); sink.connect(ctx.destination);
@@ -602,6 +713,13 @@ async function ensureMic(){
   S.autoEst = Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0) + inLat)*1000);
   if (!S.compTouched) setComp(S.autoEst, S.phones === 'wired', false);
   return true;
+}
+function releaseMic(){
+  for (const n of [S.micSrc, S.analyser, S.monitorGain]) if (n){ try { n.disconnect(); } catch(e){} }
+  if (S.mic) S.mic.getTracks().forEach(t => { try { t.stop(); } catch(e){} });
+  S.mic = null; S.micSrc = null; S.analyser = null; S.monitorGain = null;
+  if (!S.rec){ if (S.recNode){ try { S.recNode.disconnect(); } catch(e){} } S.recNode = null; }
+  $('#meter').style.width = '0%';
 }
 
 async function record(mode){
@@ -644,8 +762,9 @@ function onRecMessage(e){
 function commitRecording(){
   const r = S.rec; if (!r) return;
   clearTimeout(r.timer); S.rec = null;
+  const wasInterrupted = S.interrupted; S.interrupted = false;
   S.pos = r.pos;
-  if (!r.chunks.length){ setStatus('Nothing recorded. The take stopped during the lead-in.'); updateUI(); draw(); return; }
+  if (!r.chunks.length){ setStatus(wasInterrupted ? 'The take got interrupted before it started. Tap Record vocals when you are ready.' : 'Nothing recorded. The take stopped during the lead-in.'); updateUI(); draw(); return; }
   const sr = S.ctx.sampleRate;
   const first = r.chunks[0].frame, lastC = r.chunks[r.chunks.length-1];
   const total = lastC.frame + lastC.data.length - first;
@@ -668,12 +787,16 @@ function commitRecording(){
     track.data.set(data, 0);
     entry = {id:track.id, created:true};
   }
-  track.buf = null; track.peaks = null;
+  track.buf = null; track.peaks = null; track.dirty = true;
   computeAutoGain(track); applyLevels();
   S.undo.push(entry);
+  queueSave(50);
   let clipped = 0;
   for (let i = 0; i < data.length; i++) if (data[i] > 0.985 || data[i] < -0.985){ if (++clipped > 40) break; }
-  if (clipped > 40){
+  if (wasInterrupted){
+    S.pos = Math.min(S.beat.duration, (idx + total)/sr);
+    setStatus('You got interrupted. Your take is saved up to that point, and the playhead is where you stopped. Tap Record vocals to pick it back up.', true);
+  } else if (clipped > 40){
     setStatus('Saved to ' + track.name + ', but some parts hit the red and may sound crunchy. Back off the mic a little and redo those lines.', true);
   } else {
     setStatus('Saved ' + fmt(total/sr) + ' to ' + track.name + '. Hit play to hear it back.');
@@ -685,8 +808,9 @@ function undoTake(){
   const t = S.tracks.find(x => x.id === u.id);
   if (t){
     if (u.created){ removeTrack(t, true); }
-    else { t.data.set(u.prev, u.idx); t.buf = null; t.peaks = null; computeAutoGain(t); applyLevels(); }
+    else { t.data.set(u.prev, u.idx); t.buf = null; t.peaks = null; t.dirty = true; computeAutoGain(t); applyLevels(); }
   }
+  queueSave();
   setStatus('Last take undone.');
   renderRows(); updateUI(); draw();
 }
@@ -695,6 +819,8 @@ function removeTrack(t, fromUndo){
   S.tracks = S.tracks.filter(x => x !== t);
   if (t.node){ try { t.node.disconnect(); } catch(e){} }
   if (!fromUndo) S.undo = S.undo.filter(u => u.id !== t.id);
+  S.removedIds.push(t.id);
+  queueSave();
 }
 
 /* ---------- export ---------- */
@@ -832,16 +958,16 @@ function sliderRow({name, color, vol, onVol, muted, onMute, onDel, master}){
 }
 function renderRows(){
   const box = $('#rows'); box.innerHTML = '';
-  box.append(sliderRow({name:'Beat', color:css('--brass'), vol:S.beatVol, onVol:v => { S.beatVol = v; applyLevels(); }, master:true}));
-  box.append(sliderRow({name:'All vocals', color:css('--text'), vol:S.vocalVol, onVol:v => { S.vocalVol = v; applyLevels(); }, master:true}));
+  box.append(sliderRow({name:'Beat', color:css('--brass'), vol:S.beatVol, onVol:v => { S.beatVol = v; applyLevels(); queueSave(800); }, master:true}));
+  box.append(sliderRow({name:'All vocals', color:css('--text'), vol:S.vocalVol, onVol:v => { S.vocalVol = v; applyLevels(); queueSave(800); }, master:true}));
   if (!S.tracks.length){
     const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'Your takes show up here with their own volume, mute and delete.';
     box.append(e); return;
   }
   for (const t of S.tracks){
     box.append(sliderRow({name:t.name, color:t.color, vol:t.vol, muted:t.muted,
-      onVol:v => { t.vol = v; applyLevels(); },
-      onMute:() => { t.muted = !t.muted; applyLevels(); draw(); return t.muted; },
+      onVol:v => { t.vol = v; applyLevels(); queueSave(800); },
+      onMute:() => { t.muted = !t.muted; applyLevels(); draw(); queueSave(); return t.muted; },
       onDel:() => { removeTrack(t); setStatus(t.name + ' deleted.'); renderRows(); updateUI(); draw(); }}));
   }
 }
@@ -974,9 +1100,16 @@ document.addEventListener('keydown', e => {
 ['dragover','dragenter'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $('#app').classList.add('drop'); }));
 ['dragleave','drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); $('#app').classList.remove('drop'); }));
 document.addEventListener('drop', e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f && !S.rec) loadBeatFile(f); });
-window.addEventListener('beforeunload', e => { if (S.tracks.length){ e.preventDefault(); e.returnValue = ''; } });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  if (S.rec){ S.interrupted = true; stopAll(); }
+  else if (S.playing) stopAll();
+  saveNow();
+});
+window.addEventListener('pagehide', () => { saveNow(); });
 
-renderRows(); updateUI(); loadDemo(); requestAnimationFrame(loop);
+renderRows(); updateUI(); requestAnimationFrame(loop);
+restoreSession().then(ok => { S.saveReady = true; if (!ok) loadDemo(); });
 window.__booth = S;
 })();
 </script>
