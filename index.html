@@ -98,6 +98,19 @@ summary{cursor:pointer;font-weight:600}
 .drop{outline:3px dashed var(--brass);outline-offset:-8px}
 .hot{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--rec);border-radius:4px;padding:4px 6px}
 .status.warn{color:#ffb3b3}
+.prog,.ready{margin-top:14px;padding:14px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.progtop{display:flex;justify-content:space-between;gap:12px;font-weight:600}
+#progPct{font:500 15px var(--mono);font-variant-numeric:tabular-nums;color:var(--brass)}
+.progbar{height:10px;border-radius:5px;background:var(--bg);overflow:hidden}
+.progfill{height:100%;width:0;background:var(--brass);border-radius:5px;transition:width .2s linear}
+.progsub{font-size:12px;color:var(--muted)}
+.ready{border-color:var(--v3)}
+.readytop{display:flex;gap:10px;align-items:flex-start}
+.check-dot{width:12px;height:12px;border-radius:50%;background:var(--v3);margin-top:5px;flex:none}
+.readyname{font-weight:600;word-break:break-word}
+.readymeta{font:500 13px var(--mono);color:var(--muted)}
+.ready .hint{margin:0}
+@media (prefers-reduced-motion:reduce){.progfill{transition:none}}
 .saved{font-size:12px;color:var(--v3);min-height:1.2em;margin-top:2px}
 .saved:not(:empty)::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:6px;vertical-align:1px}
 .saved.bad{color:#ffb3b3}
@@ -216,6 +229,19 @@ summary{cursor:pointer;font-weight:600}
       <button class="btn primary" id="mp3Btn" type="button" disabled>Song (MP3)</button>
       <button id="wavBtn" type="button" disabled>Song (WAV)</button>
       <button id="vocBtn" type="button" disabled>Vocals only (WAV)</button>
+    </div>
+    <div class="prog" id="prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+      <div class="progtop"><span id="progLabel">Mixing your song…</span><span id="progPct">0%</span></div>
+      <div class="progbar"><div class="progfill" id="progFill"></div></div>
+      <div class="progsub">Keep this screen open until it finishes.</div>
+    </div>
+    <div class="ready" id="ready" hidden>
+      <div class="readytop"><span class="check-dot" aria-hidden="true"></span><div><div class="readyname" id="readyName"></div><div class="readymeta" id="readyMeta"></div></div></div>
+      <div class="btns">
+        <button class="btn primary" id="saveBtn" type="button">Save</button>
+        <button id="shareBtn" type="button" hidden>Share</button>
+      </div>
+      <p class="hint" id="readyHint"></p>
     </div>
     <p class="hint">Song downloads come with the vocals polished and mixed loud. <b>Vocals only</b> is the raw recording, ready for an engineer to mix.</p>
   </section>
@@ -788,6 +814,7 @@ function commitRecording(){
   const wasInterrupted = S.interrupted; S.interrupted = false;
   S.pos = r.pos;
   if (!$('#monitor').checked) releaseMic();
+  $('#ready').hidden = true; ready = null;
   if (!r.chunks.length){ setStatus(wasInterrupted ? 'The take got interrupted before it started. Tap Record vocals when you are ready.' : 'Nothing recorded. The take stopped during the lead-in.'); updateUI(); draw(); return; }
   const sr = S.ctx.sampleRate;
   const first = r.chunks[0].frame, lastC = r.chunks[r.chunks.length-1];
@@ -848,10 +875,17 @@ function removeTrack(t, fromUndo){
 }
 
 /* ---------- export ---------- */
-async function renderMix(withBeat, channels){
+async function renderMix(withBeat, channels, onProg){
   const ctx = ensureCtx(), sr = ctx.sampleRate;
   const len = Math.ceil((songLength() + 0.3)*sr);
   const oc = new OfflineAudioContext(channels, len, sr);
+  if (onProg && oc.suspend){
+    const dur = len/sr, steps = 25, q = 128/sr;
+    for (let i = 1; i < steps; i++){
+      const t = Math.floor((dur*i/steps)/q)*q;
+      try { oc.suspend(t).then(() => { onProg(i/steps); oc.resume(); }).catch(() => {}); } catch(e){ break; }
+    }
+  }
   const polish = withBeat;
   const gph = buildGraph(oc, polish);
   const beatG = oc.createGain(); beatG.gain.value = withBeat ? volToGain(S.beatVol) : 0; beatG.connect(gph.beatIn);
@@ -877,14 +911,14 @@ function toWav(buf){
   for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++){ const s = Math.max(-1, Math.min(1, data[c][i])); v.setInt16(o, s < 0 ? s*0x8000 : s*0x7FFF, true); o += 2; }
   return new Blob([ab], {type:'audio/wav'});
 }
-async function toMp3(buf){
+async function toMp3(buf, onProg){
   const sr = buf.sampleRate, L = buf.getChannelData(0), R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
   const enc = new lamejs.Mp3Encoder(2, sr, 192);
   const out = [], block = 1152, conv = a => { const r = new Int16Array(a.length); for (let i = 0; i < a.length; i++){ const s = Math.max(-1, Math.min(1, a[i])); r[i] = s < 0 ? s*0x8000 : s*0x7FFF; } return r; };
   for (let i = 0; i < L.length; i += block){
     const m = enc.encodeBuffer(conv(L.subarray(i, i + block)), conv(R.subarray(i, i + block)));
     if (m.length) out.push(new Uint8Array(m));
-    if (i % (block*400) === 0) await new Promise(r => setTimeout(r, 0));
+    if (i % (block*150) === 0){ if (onProg) onProg(i/L.length); await new Promise(r => setTimeout(r, 0)); }
   }
   const end = enc.flush(); if (end.length) out.push(new Uint8Array(end));
   return new Blob(out, {type:'audio/mpeg'});
@@ -894,25 +928,66 @@ function saveBlob(blob, name){
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_ANDROID = /Android/.test(navigator.userAgent);
+const frame = () => new Promise(r => setTimeout(r, 0));
+function showProg(label, frac){
+  $('#prog').hidden = false;
+  if (label) $('#progLabel').textContent = label;
+  const pct = Math.max(0, Math.min(100, Math.round(frac*100)));
+  $('#progPct').textContent = pct + '%';
+  $('#progFill').style.width = pct + '%';
+  $('#prog').setAttribute('aria-valuenow', pct);
+}
+let ready = null;
 async function doExport(kind){
-  if (!S.tracks.length) return;
+  if (!S.tracks.length || S.exporting) return;
   if (S.playing || S.rec) stopAll();
-  const btns = ['#mp3Btn','#wavBtn','#vocBtn'].map(s => $(s)); btns.forEach(b => b.disabled = true);
+  S.exporting = true; updateUI();
+  $('#ready').hidden = true; ready = null;
   const base = safeName(S.beatName === 'Demo beat' ? 'Booth song' : S.beatName);
   try {
-    if (kind === 'mp3' && !window.lamejs){ setStatus('MP3 needs an internet connection to load. Grabbing a WAV instead.'); kind = 'wav'; }
-    setStatus(kind === 'mp3' ? 'Mixing and making your MP3…' : 'Mixing your song…');
-    await new Promise(r => setTimeout(r, 30));
-    if (kind === 'voc'){ saveBlob(toWav(await renderMix(false, 1)), base + ' - vocals raw.wav'); }
-    else {
-      const buf = await renderMix(true, 2);
-      if (kind === 'mp3') saveBlob(await toMp3(buf), base + ' - song.mp3');
-      else saveBlob(toWav(buf), base + ' - song.wav');
+    if (kind === 'mp3' && !window.lamejs){ kind = 'wav'; setStatus('MP3 maker could not load, so this one is a WAV.'); }
+    const mixShare = kind === 'mp3' ? 0.45 : 0.85;
+    showProg(kind === 'voc' ? 'Gathering your vocals…' : 'Mixing your song…', 0); await frame();
+    const buf = await renderMix(kind !== 'voc', kind === 'voc' ? 1 : 2, p => showProg(null, p*mixShare));
+    let blob, name;
+    if (kind === 'mp3'){
+      showProg('Making the MP3…', mixShare); await frame();
+      blob = await toMp3(buf, p => showProg(null, mixShare + p*(1 - mixShare)));
+      name = base + ' - song.mp3';
+    } else {
+      showProg('Packing the file…', mixShare); await frame();
+      blob = toWav(buf);
+      name = base + (kind === 'voc' ? ' - vocals raw.wav' : ' - song.wav');
     }
-    setStatus('Download ready. Check your downloads.');
-  } catch (e){ setStatus('The download failed. Try the WAV version.'); }
-  updateUI();
+    showProg('Done', 1); await new Promise(r => setTimeout(r, 250));
+    ready = {blob, name};
+    $('#prog').hidden = true;
+    $('#readyName').textContent = name;
+    $('#readyMeta').textContent = fmt(buf.duration).replace(/\.\d$/, '') + ' · ' + (blob.size/1048576).toFixed(1) + ' MB';
+    let canShare = false;
+    try { canShare = !!(navigator.canShare && navigator.canShare({files:[new File([blob], name, {type:blob.type})]})); } catch(e){}
+    $('#shareBtn').hidden = !canShare;
+    $('#readyHint').textContent = IS_IOS
+      ? 'Save puts it in the Files app, in Downloads. Share lets you text it, AirDrop it, or save it wherever you want.'
+      : IS_ANDROID
+        ? 'Save puts it in your Downloads folder.' + (canShare ? ' Share lets you text it or send it to any app.' : '')
+        : 'Save puts it in your Downloads folder.';
+    $('#ready').hidden = false;
+    setStatus('Your song is ready. Tap Save in the Download box.');
+  } catch (e){
+    $('#prog').hidden = true;
+    setStatus(kind === 'mp3' ? 'The MP3 did not finish. Try Song (WAV) instead.' : 'The download did not finish. Try again.', true);
+  }
+  S.exporting = false; updateUI();
 }
+$('#saveBtn').onclick = () => { if (ready) saveBlob(ready.blob, ready.name); };
+$('#shareBtn').onclick = async () => {
+  if (!ready) return;
+  try { await navigator.share({files:[new File([ready.blob], ready.name, {type:ready.blob.type})], title:ready.name}); }
+  catch (e){ if (e && e.name !== 'AbortError') saveBlob(ready.blob, ready.name); }
+};
 
 /* ---------- UI ---------- */
 function setComp(ms, touched, restart = true){
@@ -952,7 +1027,7 @@ function updateUI(){
   $('#undoBtn').disabled = !S.undo.length || rec;
   $('#clearBtn').disabled = !has || rec;
   $('#demoBtn').disabled = rec; $('#beatFile').disabled = rec;
-  ['#mp3Btn','#wavBtn','#vocBtn'].forEach(s => $(s).disabled = !has || rec);
+  ['#mp3Btn','#wavBtn','#vocBtn'].forEach(s => $(s).disabled = !has || rec || !!S.exporting);
   $('#light').classList.toggle('on', rec);
 }
 function sliderRow({name, color, vol, onVol, muted, onMute, onDel, master}){
