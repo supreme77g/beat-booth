@@ -666,6 +666,15 @@ class BoothRec extends AudioWorkletProcessor{
 }
 registerProcessor('booth-rec',BoothRec);`;
 
+const BT_RE = /bluetooth|buds|airpods|beats|headset|hands-?free|wireless|\bbt\b|jabra|bose|sony w[hf]|soundcore|galaxy/i;
+async function openMic(deviceId){
+  const base = {echoCancellation:false, noiseSuppression:false, autoGainControl:false};
+  if (deviceId){
+    try { return await navigator.mediaDevices.getUserMedia({audio:{...base, deviceId:{exact:deviceId}}}); }
+    catch (e){ if (e && e.name === 'NotAllowedError') throw e; S.micId = null; store.set('micId', ''); }
+  }
+  return navigator.mediaDevices.getUserMedia({audio:base});
+}
 async function ensureMic(){
   if (S.mic) return true;
   const ctx = ensureCtx();
@@ -676,7 +685,21 @@ async function ensureMic(){
   if (!ctx.audioWorklet){ setStatus('This browser is too old to record here. Try the latest Chrome or Safari.'); return false; }
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}});
+    stream = await openMic(S.micId || store.get('micId'));
+    // Bluetooth headphones drop into muffled "call mode" when their own mic is used.
+    // If the phone offers its built-in mic, record from that instead.
+    if (S.phones === 'bt' && navigator.mediaDevices.enumerateDevices){
+      const label = (stream.getAudioTracks()[0] || {}).label || '';
+      if (BT_RE.test(label)){
+        const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+        const built = devs.find(d => d.label && !BT_RE.test(d.label) && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications');
+        if (built){
+          stream.getTracks().forEach(t => t.stop());
+          try { stream = await openMic(built.deviceId); S.micId = built.deviceId; store.set('micId', built.deviceId); }
+          catch (e2){ stream = await openMic(null); }
+        }
+      }
+    }
   } catch (e){
     const framed = window.top !== window.self;
     setStatus(e && e.name === 'NotAllowedError'
@@ -719,7 +742,7 @@ function releaseMic(){
   if (S.mic) S.mic.getTracks().forEach(t => { try { t.stop(); } catch(e){} });
   S.mic = null; S.micSrc = null; S.analyser = null; S.monitorGain = null;
   if (!S.rec){ if (S.recNode){ try { S.recNode.disconnect(); } catch(e){} } S.recNode = null; }
-  $('#meter').style.width = '0%';
+  $('#meter').style.width = '0%'; $('#hot').hidden = true; S.hotUntil = 0;
 }
 
 async function record(mode){
@@ -764,6 +787,7 @@ function commitRecording(){
   clearTimeout(r.timer); S.rec = null;
   const wasInterrupted = S.interrupted; S.interrupted = false;
   S.pos = r.pos;
+  if (!$('#monitor').checked) releaseMic();
   if (!r.chunks.length){ setStatus(wasInterrupted ? 'The take got interrupted before it started. Tap Record vocals when you are ready.' : 'Nothing recorded. The take stopped during the lead-in.'); updateUI(); draw(); return; }
   const sr = S.ctx.sampleRate;
   const first = r.chunks[0].frame, lastC = r.chunks[r.chunks.length-1];
@@ -1067,7 +1091,11 @@ $('#mp3Btn').onclick = () => doExport('mp3');
 $('#wavBtn').onclick = () => doExport('wav');
 $('#vocBtn').onclick = () => doExport('voc');
 $('#preroll').onchange = e => { S.preroll = +e.target.value; };
-$('#monitor').onchange = e => { if (S.monitorGain) S.monitorGain.gain.value = e.target.checked ? 1 : 0; if (e.target.checked && !S.mic) ensureMic().then(ok => { if (!ok) e.target.checked = false; }); };
+$('#monitor').onchange = e => {
+  if (S.monitorGain) S.monitorGain.gain.value = e.target.checked ? 1 : 0;
+  if (e.target.checked && !S.mic) ensureMic().then(ok => { if (!ok) e.target.checked = false; });
+  if (!e.target.checked && S.mic && !S.rec) releaseMic();
+};
 $('#comp').addEventListener('input', e => setComp(+e.target.value, true, false));
 $('#comp').addEventListener('change', e => setComp(+e.target.value, true, true));
 $('#syncToggle').onclick = () => {
