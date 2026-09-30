@@ -96,11 +96,21 @@ summary{cursor:pointer;font-weight:600}
 .dialog p{color:var(--muted);margin:0 0 10px}
 .dialog .acts{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px}
 .drop{outline:3px dashed var(--brass);outline-offset:-8px}
+.hot{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--rec);border-radius:4px;padding:4px 6px}
+.status.warn{color:#ffb3b3}
+.syncrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+.synclabel{font:500 13px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.syncpanel{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);display:flex;flex-direction:column;gap:10px}
+.syncpanel .sync{margin-top:0}
+.syncpanel .hint{margin:0}
+.seg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:13px}
+.dialog .acts .grow{margin-right:auto}
 @media (max-width:620px){
   .logo{font-size:38px}
   .transport{grid-template-columns:repeat(2,minmax(0,1fr))}
   .transport .rec,.transport .over{grid-column:span 1}
-  .row{grid-template-columns:10px 1fr 44px auto auto;grid-template-areas:"s n p m d" "s r r r r"}
+  .row{grid-template-columns:10px minmax(0,1fr) auto auto;grid-template-areas:"s n m d" "s r r p"}
+  .row.master{grid-template-areas:"s n n p" "s r r r"}
   .row .sw{grid-area:s;height:100%}
   .row .rname{grid-area:n}
   .row input[type=range]{grid-area:r}
@@ -171,7 +181,22 @@ summary{cursor:pointer;font-weight:600}
     </div>
     <div class="statusrow">
       <div class="status" id="status" role="status" aria-live="polite">Getting ready…</div>
-      <div class="meter" title="Mic level"><span>Mic</span><div class="meterbar"><div class="meterfill" id="meter"></div></div></div>
+      <div class="meter" title="Mic level"><span>Mic</span><div class="meterbar"><div class="meterfill" id="meter"></div></div><span class="hot" id="hot" hidden>Too loud</span></div>
+    </div>
+    <div class="syncrow">
+      <button id="syncToggle" class="small" type="button" aria-expanded="false" aria-controls="syncPanel">Vocals late? Fix sync</button>
+      <span class="synclabel" id="syncLabel">Sync 0 ms</span>
+    </div>
+    <div class="syncpanel" id="syncPanel" hidden>
+      <div class="seg"><span>Listening on</span>
+        <button id="hpWired" class="small" type="button">Wired</button>
+        <button id="hpBt" class="small" type="button">Bluetooth</button>
+      </div>
+      <div class="sync">
+        <input type="range" id="comp" min="-100" max="500" step="1" value="0" aria-label="Sync fix in milliseconds">
+        <div class="pct" id="compVal">0 ms</div>
+      </div>
+      <p class="hint">Play a take and slide until your vocals lock with the beat. Slide right if they sound late, left if they rush. It fixes every take at once, and Booth remembers it on this device.</p>
     </div>
     <p class="hint"><b>Record vocals</b> lays down your main vocal from the playhead, and records over it if you go back to fix a part. <b>Overdub</b> adds a new layer on top for doubles, ad-libs and hooks. Tap the waveform to pick where to start.</p>
   </section>
@@ -188,14 +213,7 @@ summary{cursor:pointer;font-weight:600}
       <button id="wavBtn" type="button" disabled>Song (WAV)</button>
       <button id="vocBtn" type="button" disabled>Vocals only (WAV)</button>
     </div>
-    <details>
-      <summary>Vocals a hair off the beat? Fix the sync</summary>
-      <p class="hint">Phones and computers add a small delay between the beat you hear and the voice they record. Booth guesses it for you. If your vocals still sound late, slide right. If they rush, slide left. It applies to every take, so you can fix it after recording.</p>
-      <div class="sync">
-        <input type="range" id="comp" min="-100" max="400" step="1" value="0" aria-label="Sync fix in milliseconds">
-        <div class="pct" id="compVal">0 ms</div>
-      </div>
-    </details>
+    <p class="hint">Song downloads come with the vocals polished and mixed loud. <b>Vocals only</b> is the raw recording, ready for an engineer to mix.</p>
   </section>
 
   <section class="card" aria-label="Tips">
@@ -213,7 +231,8 @@ summary{cursor:pointer;font-weight:600}
     <h3 id="mTitle"></h3>
     <div id="mBody"></div>
     <div class="acts">
-      <button id="mCancel" type="button"></button>
+      <button id="mCancel" type="button" class="grow"></button>
+      <button id="mAlt" type="button" hidden></button>
       <button id="mOk" class="btn primary" type="button"></button>
     </div>
   </div>
@@ -233,13 +252,56 @@ const S = {
   pos:0, playing:false, t0:0, playFrom:0, sources:[],
   rec:null, mic:null, recNode:null, analyser:null, monitorGain:null, workletLoaded:false,
   comp:0, compTouched:false, undo:[], preroll:2, headphonesOk:false,
-  beatVol:100, vocalVol:100
+  beatVol:100, vocalVol:100, autoEst:null, phones:null, hotUntil:0
 };
+const BT_DEFAULT_MS = 250;
+const store = {
+  get(k){ try { return localStorage.getItem('booth.' + k); } catch(e){ return null; } },
+  set(k, v){ try { localStorage.setItem('booth.' + k, String(v)); } catch(e){} }
+};
+
+/* Hidden vocal polish: level-matched takes go through low cut, mud dip, presence, air and a compressor.
+   Everything then hits a limiter so the mix is loud without clipping. Used live and in song downloads. */
+const POLISH = {
+  targetRms: 0.14, minGain: 0.5, maxGain: 8,
+  hp: 90, mudHz: 280, mudDb: -3, presHz: 4000, presDb: 3.5, airHz: 10000, airDb: 2.5,
+  comp: {threshold:-22, knee:6, ratio:3.5, attack:0.005, release:0.15}, makeup: 0.85,
+  lim: {threshold:-2, knee:0, ratio:20, attack:0.002, release:0.1}
+};
+function buildGraph(ctx, polish){
+  const out = ctx.destination;
+  const master = ctx.createGain();
+  let beatIn, vocalIn;
+  if (polish){
+    const lim = ctx.createDynamicsCompressor();
+    for (const k in POLISH.lim) lim[k].value = POLISH.lim[k];
+    master.connect(lim); lim.connect(out);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = POLISH.hp; hp.Q.value = 0.7;
+    const mud = ctx.createBiquadFilter(); mud.type = 'peaking'; mud.frequency.value = POLISH.mudHz; mud.gain.value = POLISH.mudDb; mud.Q.value = 1;
+    const pres = ctx.createBiquadFilter(); pres.type = 'peaking'; pres.frequency.value = POLISH.presHz; pres.gain.value = POLISH.presDb; pres.Q.value = 0.8;
+    const air = ctx.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = POLISH.airHz; air.gain.value = POLISH.airDb;
+    const comp = ctx.createDynamicsCompressor();
+    for (const k in POLISH.comp) comp[k].value = POLISH.comp[k];
+    const makeup = ctx.createGain(); makeup.gain.value = POLISH.makeup;
+    hp.connect(mud); mud.connect(pres); pres.connect(air); air.connect(comp); comp.connect(makeup); makeup.connect(master);
+    vocalIn = hp;
+  } else {
+    master.connect(out);
+    vocalIn = master;
+  }
+  beatIn = master;
+  return {beatIn, vocalIn};
+}
+function computeAutoGain(t){
+  const d = t.data, gate = 0.0056; let sum = 0, n = 0;
+  for (let i = 0; i < d.length; i += 2){ const v = d[i]; if (v > gate || v < -gate){ sum += v*v; n++; } }
+  t.autoGain = n < 2000 ? 1 : Math.max(POLISH.minGain, Math.min(POLISH.maxGain, POLISH.targetRms/Math.sqrt(sum/n)));
+}
 
 /* ---------- helpers ---------- */
 const fmt = s => { s = Math.max(0, s); const m = Math.floor(s/60); const r = s - m*60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const volToGain = v => Math.pow(v/100, 2);
-const setStatus = t => { $('#status').textContent = t; };
+const setStatus = (t, warn) => { const el = $('#status'); el.textContent = t; el.classList.toggle('warn', !!warn); };
 const safeName = s => (s || 'song').replace(/[\\/:*?"<>|]+/g, '').trim() || 'song';
 
 function ensureCtx(){
@@ -247,8 +309,9 @@ function ensureCtx(){
     const C = window.AudioContext || window.webkitAudioContext;
     const ctx = new C({latencyHint:'interactive'});
     S.ctx = ctx;
-    S.beatGain = ctx.createGain(); S.beatGain.connect(ctx.destination);
-    S.vocalBus = ctx.createGain(); S.vocalBus.connect(ctx.destination);
+    const gph = buildGraph(ctx, true);
+    S.beatGain = ctx.createGain(); S.beatGain.connect(gph.beatIn);
+    S.vocalBus = ctx.createGain(); S.vocalBus.connect(gph.vocalIn);
     for (const t of S.tracks) attachTrackNode(t);
     applyLevels();
   }
@@ -259,25 +322,28 @@ function applyLevels(){
   if (!S.ctx) return;
   S.beatGain.gain.value = volToGain(S.beatVol);
   S.vocalBus.gain.value = volToGain(S.vocalVol);
-  for (const t of S.tracks) if (t.node) t.node.gain.value = t.muted ? 0 : volToGain(t.vol);
+  for (const t of S.tracks) if (t.node) t.node.gain.value = trackGain(t, true);
 }
+function trackGain(t, polish){ return t.muted ? 0 : volToGain(t.vol)*(polish ? (t.autoGain || 1) : 1); }
 function attachTrackNode(t){
   if (!S.ctx || t.node) return;
   t.node = S.ctx.createGain(); t.node.connect(S.vocalBus);
-  t.node.gain.value = t.muted ? 0 : volToGain(t.vol);
+  t.node.gain.value = trackGain(t, true);
 }
 
 /* ---------- modal ---------- */
-function ask({title, body, ok, cancel}){
+function ask({title, body, ok, alt, cancel}){
   return new Promise(res => {
     $('#mTitle').textContent = title;
     $('#mBody').innerHTML = body;
     $('#mOk').textContent = ok;
+    $('#mAlt').hidden = !alt; $('#mAlt').textContent = alt || '';
     $('#mCancel').textContent = cancel || 'Cancel';
     $('#modal').hidden = false;
     $('#mOk').focus();
-    const done = v => { $('#modal').hidden = true; $('#mOk').onclick = $('#mCancel').onclick = null; res(v); };
+    const done = v => { $('#modal').hidden = true; $('#mOk').onclick = $('#mAlt').onclick = $('#mCancel').onclick = null; res(v); };
     $('#mOk').onclick = () => done(true);
+    $('#mAlt').onclick = () => done('alt');
     $('#mCancel').onclick = () => done(false);
   });
 }
@@ -390,7 +456,7 @@ async function loadDemo(){
 function leadTrack(){ return S.tracks.find(t => t.lead) || null; }
 function createTrack(lead, start, len){
   const t = {id:S.nextId++, lead, name: lead ? 'Lead vocal' : 'Layer ' + (++S.layerCount), start, data:new Float32Array(len),
-    vol:100, muted:false, color: COLORS[(S.nextId - 2) % COLORS.length], buf:null, peaks:null, node:null};
+    vol:100, muted:false, color: lead ? COLORS[0] : COLORS[1 + (S.layerCount - 1) % (COLORS.length - 1)], buf:null, peaks:null, node:null, autoGain:1};
   if (lead) S.tracks.unshift(t); else S.tracks.push(t);
   attachTrackNode(t);
   return t;
@@ -530,12 +596,11 @@ async function ensureMic(){
   S.recNode = node;
   S.analyser = ctx.createAnalyser(); S.analyser.fftSize = 1024; src.connect(S.analyser);
   S.monitorGain = ctx.createGain(); S.monitorGain.gain.value = $('#monitor').checked ? 1 : 0; src.connect(S.monitorGain); S.monitorGain.connect(ctx.destination);
-  if (!S.compTouched){
-    const tr = stream.getAudioTracks()[0];
-    const st = tr && tr.getSettings ? tr.getSettings() : {};
-    const inLat = typeof st.latency === 'number' ? st.latency : 0.01;
-    setComp(Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0) + inLat)*1000), false);
-  }
+  const tr = stream.getAudioTracks()[0];
+  const st = tr && tr.getSettings ? tr.getSettings() : {};
+  const inLat = typeof st.latency === 'number' ? st.latency : 0.01;
+  S.autoEst = Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0) + inLat)*1000);
+  if (!S.compTouched) setComp(S.autoEst, S.phones === 'wired', false);
   return true;
 }
 
@@ -543,9 +608,14 @@ async function record(mode){
   if (!S.beat || S.rec) return;
   if (S.playing) stopAll();
   if (!S.headphonesOk){
-    const ok = await ask({title:'Headphones on?', body:'<p>Put on headphones before you record, so the mic only hears your voice and not the beat.</p><p>Wired headphones keep you most on time. Bluetooth earbuds add delay.</p>', ok:"I've got headphones on", cancel:'Not yet'});
-    if (!ok) return;
-    S.headphonesOk = true;
+    if (S.phones){
+      S.headphonesOk = true;
+    } else {
+      const ans = await ask({title:'Headphones on?', body:'<p>Put on headphones before you record, so the mic only hears your voice and not the beat.</p><p>What are you listening on? Bluetooth adds a delay, and Booth will line your vocals up for it.</p>', ok:'Wired', alt:'Bluetooth', cancel:'Not yet'});
+      if (!ans) return;
+      S.headphonesOk = true;
+      setPhones(ans === 'alt' ? 'bt' : 'wired', ans === 'alt');
+    }
   }
   if (!(await ensureMic())) return;
   const ctx = S.ctx, sr = ctx.sampleRate;
@@ -599,8 +669,15 @@ function commitRecording(){
     entry = {id:track.id, created:true};
   }
   track.buf = null; track.peaks = null;
+  computeAutoGain(track); applyLevels();
   S.undo.push(entry);
-  setStatus('Saved ' + fmt(total/sr) + ' to ' + track.name + '. Hit play to hear it back.');
+  let clipped = 0;
+  for (let i = 0; i < data.length; i++) if (data[i] > 0.985 || data[i] < -0.985){ if (++clipped > 40) break; }
+  if (clipped > 40){
+    setStatus('Saved to ' + track.name + ', but some parts hit the red and may sound crunchy. Back off the mic a little and redo those lines.', true);
+  } else {
+    setStatus('Saved ' + fmt(total/sr) + ' to ' + track.name + '. Hit play to hear it back.');
+  }
   renderRows(); updateUI(); draw();
 }
 function undoTake(){
@@ -608,7 +685,7 @@ function undoTake(){
   const t = S.tracks.find(x => x.id === u.id);
   if (t){
     if (u.created){ removeTrack(t, true); }
-    else { t.data.set(u.prev, u.idx); t.buf = null; t.peaks = null; }
+    else { t.data.set(u.prev, u.idx); t.buf = null; t.peaks = null; computeAutoGain(t); applyLevels(); }
   }
   setStatus('Last take undone.');
   renderRows(); updateUI(); draw();
@@ -625,10 +702,12 @@ async function renderMix(withBeat, channels){
   const ctx = ensureCtx(), sr = ctx.sampleRate;
   const len = Math.ceil((songLength() + 0.3)*sr);
   const oc = new OfflineAudioContext(channels, len, sr);
-  const beatG = oc.createGain(); beatG.gain.value = withBeat ? volToGain(S.beatVol) : 0; beatG.connect(oc.destination);
-  const vocG = oc.createGain(); vocG.gain.value = volToGain(S.vocalVol); vocG.connect(oc.destination);
+  const polish = withBeat;
+  const gph = buildGraph(oc, polish);
+  const beatG = oc.createGain(); beatG.gain.value = withBeat ? volToGain(S.beatVol) : 0; beatG.connect(gph.beatIn);
+  const vocG = oc.createGain(); vocG.gain.value = volToGain(S.vocalVol); vocG.connect(gph.vocalIn);
   const nodes = new Map();
-  for (const t of S.tracks){ const g = oc.createGain(); g.gain.value = t.muted ? 0 : volToGain(t.vol); g.connect(vocG); nodes.set(t, g); }
+  for (const t of S.tracks){ const g = oc.createGain(); g.gain.value = trackGain(t, polish); g.connect(vocG); nodes.set(t, g); }
   schedule(oc, {beat:beatG, track: t => nodes.get(t)}, 0, 0, {offline:true});
   const buf = await oc.startRendering();
   let peak = 0;
@@ -674,7 +753,7 @@ async function doExport(kind){
     if (kind === 'mp3' && !window.lamejs){ setStatus('MP3 needs an internet connection to load. Grabbing a WAV instead.'); kind = 'wav'; }
     setStatus(kind === 'mp3' ? 'Mixing and making your MP3…' : 'Mixing your song…');
     await new Promise(r => setTimeout(r, 30));
-    if (kind === 'voc'){ saveBlob(toWav(await renderMix(false, 1)), base + ' - vocals.wav'); }
+    if (kind === 'voc'){ saveBlob(toWav(await renderMix(false, 1)), base + ' - vocals raw.wav'); }
     else {
       const buf = await renderMix(true, 2);
       if (kind === 'mp3') saveBlob(await toMp3(buf), base + ' - song.mp3');
@@ -686,12 +765,26 @@ async function doExport(kind){
 }
 
 /* ---------- UI ---------- */
-function setComp(ms, touched){
-  S.comp = ms/1000; if (touched) S.compTouched = true;
+function setComp(ms, touched, restart = true){
+  ms = Math.round(ms);
+  S.comp = ms/1000;
+  if (touched){ S.compTouched = true; store.set('sync', ms); }
   $('#comp').value = ms; $('#compVal').textContent = ms + ' ms';
+  $('#syncLabel').textContent = 'Sync ' + ms + ' ms' + (S.phones ? ' · ' + (S.phones === 'bt' ? 'Bluetooth' : 'Wired') : '');
   for (const t of S.tracks) t.peaks = null;
-  if (S.playing) startPlayback(curPos());
+  if (restart && S.playing && !S.rec) startPlayback(curPos());
   draw();
+}
+function setPhones(kind, applyDefault){
+  S.phones = kind; store.set('phones', kind);
+  $('#hpWired').classList.toggle('on', kind === 'wired');
+  $('#hpBt').classList.toggle('on', kind === 'bt');
+  $('#hpWired').setAttribute('aria-pressed', kind === 'wired');
+  $('#hpBt').setAttribute('aria-pressed', kind === 'bt');
+  if (applyDefault){
+    if (kind === 'bt') setComp(BT_DEFAULT_MS, true);
+    else setComp(S.autoEst != null ? S.autoEst : 30, true);
+  } else setComp(S.comp*1000, false, false);
 }
 function updateUI(){
   const hasBeat = !!S.beat, rec = !!S.rec, has = S.tracks.length > 0;
@@ -822,6 +915,10 @@ function loop(){
     const a = new Float32Array(S.analyser.fftSize); S.analyser.getFloatTimeDomainData(a);
     let m = 0; for (let i = 0; i < a.length; i++){ const v = Math.abs(a[i]); if (v > m) m = v; }
     const db = 20*Math.log10(m || 1e-5); $('#meter').style.width = Math.max(0, Math.min(100, (db + 60)/60*100)) + '%';
+    const now = performance.now();
+    if (m > 0.97) S.hotUntil = now + 1500;
+    const hot = now < S.hotUntil;
+    if ($('#hot').hidden === hot) $('#hot').hidden = !hot;
   }
   requestAnimationFrame(loop);
 }
@@ -845,7 +942,21 @@ $('#wavBtn').onclick = () => doExport('wav');
 $('#vocBtn').onclick = () => doExport('voc');
 $('#preroll').onchange = e => { S.preroll = +e.target.value; };
 $('#monitor').onchange = e => { if (S.monitorGain) S.monitorGain.gain.value = e.target.checked ? 1 : 0; if (e.target.checked && !S.mic) ensureMic().then(ok => { if (!ok) e.target.checked = false; }); };
-$('#comp').addEventListener('input', e => setComp(+e.target.value, true));
+$('#comp').addEventListener('input', e => setComp(+e.target.value, true, false));
+$('#comp').addEventListener('change', e => setComp(+e.target.value, true, true));
+$('#syncToggle').onclick = () => {
+  const p = $('#syncPanel'); p.hidden = !p.hidden;
+  $('#syncToggle').setAttribute('aria-expanded', !p.hidden);
+  $('#syncToggle').textContent = p.hidden ? 'Vocals late? Fix sync' : 'Done';
+};
+$('#hpWired').onclick = () => setPhones('wired', true);
+$('#hpBt').onclick = () => setPhones('bt', true);
+(() => {
+  const ph = store.get('phones'), sy = store.get('sync');
+  if (ph === 'bt' || ph === 'wired') setPhones(ph, false);
+  if (sy !== null && !isNaN(+sy)) setComp(+sy, true, false);
+  else if (ph === 'bt') setComp(BT_DEFAULT_MS, true, false);
+})();
 const cv = $('#cv');
 cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); seekFromEvent(e); });
 cv.addEventListener('pointermove', e => { if (e.buttons && !S.playing) seekFromEvent(e); });
