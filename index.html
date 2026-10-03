@@ -98,6 +98,25 @@ summary{cursor:pointer;font-weight:600}
 .drop{outline:3px dashed var(--brass);outline-offset:-8px}
 .hot{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--rec);border-radius:4px;padding:4px 6px}
 .status.warn{color:#ffb3b3}
+.artist #loadBtn,.artist #demoBtn{display:none}
+.beatby{color:var(--brass);font-weight:600;font-size:14px;margin-top:2px}
+.making .card:not(.maker){display:none}
+.maker h2{font:700 20px/1 var(--display);letter-spacing:.04em;text-transform:uppercase;margin:0 0 8px}
+.maker .hint{margin:0 0 12px}
+.makerform{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.makerform label{font-weight:600;font-size:14px}
+.makerform input{font:15px var(--sans);color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:44px;width:100%}
+.makerrow{display:flex;gap:8px}
+.makerrow input{flex:1;min-width:0}
+.makerlist{display:flex;flex-direction:column;gap:8px}
+.mbeat{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--panel2);border-radius:10px;flex-wrap:wrap}
+.mbeat .mt{flex:1 1 160px;min-width:0}
+.mbeat .mn{font-weight:600}
+.mbeat .mf{font:500 12px var(--mono);color:var(--muted);word-break:break-all}
+.mbeat a.small{text-decoration:none}
+.steps{color:var(--muted);font-size:14px;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.steps b{color:var(--text)}
+code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);padding:1px 5px;border-radius:4px}
 .prog,.ready{margin-top:14px;padding:14px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
 .progtop{display:flex;justify-content:space-between;gap:12px;font-weight:600}
 #progPct{font:500 15px var(--mono);font-variant-numeric:tabular-nums;color:var(--brass)}
@@ -141,17 +160,41 @@ summary{cursor:pointer;font-weight:600}
 <div class="wrap" id="app">
   <header>
     <h1 class="logo"><span class="light" id="light" aria-hidden="true"></span>BEAT BOOTH</h1>
-    <p class="tag">Load a beat, put on headphones, hit record. Lay down a whole song right here.</p>
+    <p class="tag" id="tag">Load a beat, put on headphones, hit record. Lay down a whole song right here.</p>
   </header>
+
+  <section class="card maker" id="maker" aria-label="Link maker" hidden>
+    <h2>Beat links</h2>
+    <p class="hint">Send an artist a link and your beat opens in the booth, ready to record. They can't upload a different beat or use the demo.</p>
+    <div class="makerform">
+      <label for="byName">Producer name on the links</label>
+      <input type="text" id="byName" placeholder="Su-Preme" autocomplete="off">
+    </div>
+    <div class="makerlist" id="makerList"><div class="empty">Looking for beats in your beats folder…</div></div>
+    <div class="makerform">
+      <label for="manualBeat">Beat not listed? Type its file name</label>
+      <div class="makerrow"><input type="text" id="manualBeat" placeholder="brooklyn-nights.mp3" autocomplete="off"><button id="manualCopy" type="button" class="small">Copy link</button></div>
+    </div>
+    <details>
+      <summary>How to add beats</summary>
+      <ol class="steps">
+        <li>On GitHub, open your <b>beat-booth</b> repository.</li>
+        <li>First time only: click <b>Add file</b>, then <b>Create new file</b>. Name it <code>beats/readme.txt</code>, type anything, and click <b>Commit changes</b>. That makes the beats folder.</li>
+        <li>Open the <b>beats</b> folder, click <b>Add file</b>, then <b>Upload files</b>, and drop in your MP3s. Name them with dashes, like <code>brooklyn-nights.mp3</code>. The name becomes the beat title.</li>
+        <li>Wait a minute for Netlify, then come back here and refresh. Your beats show up with their links.</li>
+      </ol>
+    </details>
+  </section>
 
   <section class="card beatbar" aria-label="Beat">
     <div class="beatinfo">
       <div class="label">Beat</div>
       <div class="beatname" id="beatName">Building demo beat…</div>
+      <div class="beatby" id="beatBy" hidden></div>
       <div class="beatmeta" id="beatMeta">&nbsp;</div>
       <div class="saved" id="saved" role="status"></div>
     </div>
-    <label class="btn primary" for="beatFile">
+    <label class="btn primary" for="beatFile" id="loadBtn">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>
       Load your beat
       <input type="file" id="beatFile" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac">
@@ -283,7 +326,8 @@ const S = {
   rec:null, mic:null, recNode:null, analyser:null, monitorGain:null, workletLoaded:false,
   comp:0, compTouched:false, undo:[], preroll:2, headphonesOk:false,
   beatVol:100, vocalVol:100, autoEst:null, phones:null, hotUntil:0,
-  beatBytes:null, isDemo:true, beatDirty:false, beatMetaText:'', removedIds:[], saveReady:false, interrupted:false, micSrc:null
+  beatBytes:null, isDemo:true, beatDirty:false, beatMetaText:'', removedIds:[], saveReady:false, interrupted:false, micSrc:null,
+  ns:'', artist:false, isLink:false
 };
 const BT_DEFAULT_MS = 250;
 const store = {
@@ -438,9 +482,9 @@ const DB = {
       tx.oncomplete = () => res(out); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
     });
   },
-  get(k){ return this.run('readonly', st => st.get(k)); },
-  set(k, v){ return this.run('readwrite', st => st.put(v, k)); },
-  del(k){ return this.run('readwrite', st => st.delete(k)); }
+  get(k){ return this.run('readonly', st => st.get(S.ns + k)); },
+  set(k, v){ return this.run('readwrite', st => st.put(v, S.ns + k)); },
+  del(k){ return this.run('readwrite', st => st.delete(S.ns + k)); }
 };
 function toI16(f){ const o = new Int16Array(f.length); for (let i = 0; i < f.length; i++){ const s = f[i] < -1 ? -1 : f[i] > 1 ? 1 : f[i]; o[i] = s < 0 ? s*0x8000 : s*0x7FFF; } return o; }
 function fromI16(a, fromSr, toSr){
@@ -458,7 +502,7 @@ function saveNow(){ clearTimeout(saveTimer); saveChain = saveChain.then(saveSess
 async function saveSession(){
   if (!S.beat || !S.saveReady) return;
   try {
-    if (S.beatDirty){ await DB.set('beat', S.isDemo ? null : S.beatBytes); S.beatDirty = false; }
+    if (S.beatDirty){ await DB.set('beat', (S.isDemo || S.isLink) ? null : S.beatBytes); S.beatDirty = false; }
     for (const t of S.tracks) if (t.dirty){ await DB.set('pcm:' + t.id, toI16(t.data)); t.dirty = false; }
     const gone = S.removedIds.splice(0); for (const id of gone) await DB.del('pcm:' + id);
     await DB.set('session', {
@@ -473,18 +517,24 @@ async function saveSession(){
     $('#saved').classList.add('bad');
   }
 }
-async function restoreSession(){
+async function restoreSession(beatAlreadyLoaded){
   let meta;
   try { meta = await DB.get('session'); } catch(e){ return false; }
-  if (!meta || !meta.beatName || !meta.tracks) return false;
-  if (meta.isDemo && !meta.tracks.length) return false;
+  if (!meta || !meta.tracks) return false;
+  if (beatAlreadyLoaded){ if (!meta.tracks.length) return false; }
+  else {
+    if (!meta.beatName) return false;
+    if (meta.isDemo && !meta.tracks.length) return false;
+  }
   try {
     const ctx = ensureCtx();
-    let buf, bytes = null;
-    if (meta.isDemo) buf = await makeDemoBeat();
-    else { bytes = await DB.get('beat'); if (!bytes) return false; buf = await decode(bytes.slice(0)); }
-    applyBeat(buf, meta.beatName, meta.beatMeta);
-    S.beatBytes = bytes; S.isDemo = !!meta.isDemo;
+    if (!beatAlreadyLoaded){
+      let buf, bytes = null;
+      if (meta.isDemo) buf = await makeDemoBeat();
+      else { bytes = await DB.get('beat'); if (!bytes) return false; buf = await decode(bytes.slice(0)); }
+      applyBeat(buf, meta.beatName, meta.beatMeta);
+      S.beatBytes = bytes; S.isDemo = !!meta.isDemo;
+    }
     for (const tm of meta.tracks){
       const pcm = await DB.get('pcm:' + tm.id); if (!pcm) continue;
       const scale = ctx.sampleRate/(tm.sr || ctx.sampleRate);
@@ -510,7 +560,7 @@ function decode(ab){
   });
 }
 async function loadBeatFile(file){
-  if (!file) return;
+  if (!file || S.artist) return;
   ensureCtx();
   setStatus('Loading ' + file.name + '…');
   try {
@@ -1211,8 +1261,99 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { saveNow(); });
 
+/* ---------- producer links ---------- */
+const REPO = 'supreme77g/beat-booth';
+const AUDIO_RE = /\.(mp3|wav|m4a|aac|ogg|flac)$/i;
+function prettify(f){
+  return f.replace(AUDIO_RE, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+}
+function parseLink(p){
+  let b = (p.get('b') || '').trim();
+  b = b.replace(/[^\w\-. ]/g, '').replace(/^\.+/, '');
+  if (!b) return null;
+  const file = AUDIO_RE.test(b) ? b : b + '.mp3';
+  return {id:file.toLowerCase(), file, title:(p.get('t') || prettify(file)).slice(0, 80), by:(p.get('by') || '').trim().slice(0, 60)};
+}
+async function fetchBeat(url, onProg){
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Beat not found');
+  const total = +res.headers.get('content-length') || 0;
+  if (!res.body || !res.body.getReader || !total) return res.arrayBuffer();
+  const reader = res.body.getReader(), chunks = []; let got = 0;
+  for (;;){ const {done, value} = await reader.read(); if (done) break; chunks.push(value); got += value.length; onProg(Math.min(1, got/total)); }
+  const out = new Uint8Array(got); let o = 0; for (const c of chunks){ out.set(c, o); o += c.length; }
+  return out.buffer;
+}
+async function startArtist(L){
+  S.artist = true; S.isLink = true; S.isDemo = false; S.ns = 'b:' + L.id + ':';
+  document.body.classList.add('artist');
+  $('#tag').textContent = 'Your beat is loaded. Put on headphones, hit record, and lay down your song.';
+  $('#beatName').textContent = 'Loading ' + L.title + '…';
+  if (L.by){ $('#beatBy').textContent = 'Produced by ' + L.by; $('#beatBy').hidden = false; }
+  setStatus('Loading the beat…');
+  try {
+    ensureCtx();
+    const ab = await fetchBeat('beats/' + encodeURIComponent(L.file), p => { $('#beatName').textContent = 'Loading ' + L.title + '… ' + Math.round(p*100) + '%'; });
+    const buf = await decode(ab);
+    applyBeat(buf, L.title, '');
+    const restored = await restoreSession(true);
+    S.saveReady = true;
+    if (!restored) setStatus('Beat loaded. Put on headphones and hit Record vocals.');
+  } catch (e){
+    $('#beatName').textContent = "This beat link isn't working";
+    $('#beatMeta').textContent = 'Ask the producer to send the link again.';
+    setStatus("Couldn't load the beat.", true);
+  }
+}
+function linkFor(file){
+  const by = ($('#byName').value || '').trim();
+  return location.origin + location.pathname + '?b=' + encodeURIComponent(file.replace(/\.mp3$/i, '')) + (by ? '&by=' + encodeURIComponent(by) : '');
+}
+function copyLink(url, btn){
+  const done = t => { const old = btn.dataset.label || btn.textContent; btn.dataset.label = old; btn.textContent = t; setTimeout(() => { btn.textContent = old; }, 1800); };
+  const fallback = () => {
+    const inp = document.createElement('input'); inp.value = url; inp.readOnly = true; inp.className = 'mf'; inp.style.width = '100%';
+    btn.closest('.mbeat, .makerrow').after(inp); inp.focus(); inp.select(); done('Select it below');
+  };
+  try { navigator.clipboard.writeText(url).then(() => done('Copied'), fallback); } catch(e){ fallback(); }
+}
+function renderMaker(){
+  const box = $('#makerList'); box.innerHTML = '';
+  if (S.makerBeats === null){ box.innerHTML = '<div class="empty">No beats folder found yet. Open "How to add beats" below to set it up.</div>'; return; }
+  if (!S.makerBeats.length){ box.innerHTML = '<div class="empty">Your beats folder is empty. Upload some MP3s to it.</div>'; return; }
+  for (const f of S.makerBeats){
+    const row = document.createElement('div'); row.className = 'mbeat';
+    const url = linkFor(f);
+    row.innerHTML = '<div class="mt"><div class="mn"></div><div class="mf"></div></div>';
+    row.querySelector('.mn').textContent = prettify(f);
+    row.querySelector('.mf').textContent = f;
+    const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'small on'; cp.textContent = 'Copy link';
+    cp.onclick = () => copyLink(linkFor(f), cp);
+    const op = document.createElement('a'); op.className = 'btn small'; op.href = url; op.target = '_blank'; op.rel = 'noopener'; op.textContent = 'Test';
+    row.append(cp, op); box.append(row);
+  }
+}
+async function startMaker(){
+  document.body.classList.add('making');
+  $('#maker').hidden = false;
+  $('#tag').textContent = 'Copy a link for any beat in your beats folder and text it to an artist.';
+  const by = $('#byName'); by.value = store.get('by') || '';
+  by.addEventListener('input', () => { store.set('by', by.value.trim()); renderMaker(); });
+  $('#manualCopy').onclick = () => { const f = $('#manualBeat').value.trim(); if (f) copyLink(linkFor(f), $('#manualCopy')); };
+  try {
+    const r = await fetch('https://api.github.com/repos/' + REPO + '/contents/beats');
+    if (!r.ok) throw new Error(r.status);
+    S.makerBeats = (await r.json()).filter(x => x.type === 'file' && AUDIO_RE.test(x.name)).map(x => x.name);
+  } catch (e){ S.makerBeats = null; }
+  renderMaker();
+}
+
+const params = new URLSearchParams(location.search);
+const linkBeat = parseLink(params);
 renderRows(); updateUI(); requestAnimationFrame(loop);
-restoreSession().then(ok => { S.saveReady = true; if (!ok) loadDemo(); });
+if (params.has('make')) startMaker();
+else if (linkBeat) startArtist(linkBeat);
+else restoreSession().then(ok => { S.saveReady = true; if (!ok) loadDemo(); });
 window.__booth = S;
 })();
 </script>
