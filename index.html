@@ -826,6 +826,10 @@ async function record(mode){
   if (S.playing) stopAll();
   if (!S.headphonesOk){
     if (S.phones){
+      const bt = S.phones === 'bt';
+      const ans = await ask({title:'Headphones on?', body:'<p>Put your headphones on before you record, so the mic only hears your voice and not the beat.</p><p>Last time you used <b>' + (bt ? 'Bluetooth' : 'wired') + '</b> headphones.</p>', ok:"I'm ready", alt: bt ? 'Switched to wired' : 'Switched to Bluetooth', cancel:'Not yet'});
+      if (!ans) return;
+      if (ans === 'alt') setPhones(bt ? 'wired' : 'bt', true);
       S.headphonesOk = true;
     } else {
       const ans = await ask({title:'Headphones on?', body:'<p>Put on headphones before you record, so the mic only hears your voice and not the beat.</p><p>What are you listening on? Bluetooth adds a delay, and Booth will line your vocals up for it.</p>', ok:'Wired', alt:'Bluetooth', cancel:'Not yet'});
