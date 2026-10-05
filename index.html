@@ -99,6 +99,38 @@ summary{cursor:pointer;font-weight:600}
 .hot{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--rec);border-radius:4px;padding:4px 6px}
 .status.warn{color:#ffb3b3}
 .artist #loadBtn,.artist #demoBtn{display:none}
+body.hasdock{padding-bottom:calc(190px + env(safe-area-inset-bottom, 0px))}
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:5;background:rgba(18,22,29,.97);border-top:1px solid var(--line);
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom, 0px));display:flex;flex-direction:column;gap:8px;box-shadow:0 -8px 24px rgba(0,0,0,.35)}
+.dock>*{max-width:880px;width:100%;margin:0 auto}
+.dockscrub{display:flex;align-items:center;gap:10px}
+.dockscrub input{flex:1;min-width:0;accent-color:var(--brass)}
+.dtime{font:500 13px var(--mono);font-variant-numeric:tabular-nums;color:var(--text);min-width:54px}
+.dtot{color:var(--muted);text-align:right;min-width:40px}
+.cues{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;min-height:30px;align-items:center}
+.cues::-webkit-scrollbar{display:none}
+.cue{display:inline-flex;align-items:center;gap:0;flex:none;border:1px solid var(--brass);border-radius:999px;overflow:hidden;background:transparent}
+.cue button{min-height:30px;border:0;border-radius:0;background:transparent;padding:0 10px;font-size:13px;color:var(--text)}
+.cue .cjump b{color:var(--brass);font-weight:600;margin-right:6px}
+.cue .cjump span{font:500 12px var(--mono);color:var(--muted)}
+.cue .cedit{border-left:1px solid var(--line);padding:0 9px;color:var(--muted)}
+.cuehint{font-size:12px;color:var(--dim)}
+.dockbtns{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.dockbtns button{min-height:48px;padding:0 6px;font-size:14px;gap:6px}
+.dockbtns .drec{background:var(--rec);border-color:var(--rec);color:#fff}
+.dockbtns .ddub{border-color:#7a3a3a;color:#ffd9d9}
+.dockbtns .drec.active,.dockbtns .ddub.active{background:#fff;color:var(--rec);border-color:#fff}
+.making .dock{display:none}
+.rname.renamable{cursor:pointer;text-decoration:underline dotted var(--dim);text-underline-offset:4px}
+.dialog input.fld{font:16px var(--sans);color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;min-height:44px}
+.inapp{background:#2e2414;border:2px solid var(--brass);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.inapptitle{font:800 24px/1.05 var(--display);letter-spacing:.03em;text-transform:uppercase;color:var(--brass)}
+.inapp p{margin:0;color:var(--text)}
+.check .note{color:var(--dim);font-size:12px}
+.inapp p b{color:var(--brass)}
+.inapprow{display:flex;gap:8px}
+.inapprow input{flex:1;min-width:0;font:500 13px var(--mono);color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+#inappChrome{text-decoration:none}
 .beatby{color:var(--brass);font-weight:600;font-size:14px;margin-top:2px}
 .making .card:not(.maker){display:none}
 .maker h2{font:700 20px/1 var(--display);letter-spacing:.04em;text-transform:uppercase;margin:0 0 8px}
@@ -158,6 +190,15 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
 </head>
 <body>
 <div class="wrap" id="app">
+  <div class="inapp" id="inapp" role="alert" hidden>
+    <div class="inapptitle" id="inappTitle">Open this in Safari to record</div>
+    <p id="inappBody"></p>
+    <div class="inapprow">
+      <input type="text" id="inappUrl" readonly aria-label="Link to this page">
+      <button id="inappCopy" class="small on" type="button">Copy link</button>
+    </div>
+    <a id="inappChrome" class="btn primary" hidden>Open in Chrome</a>
+  </div>
   <header>
     <h1 class="logo"><span class="light" id="light" aria-hidden="true"></span>BEAT BOOTH</h1>
     <p class="tag" id="tag">Load a beat, put on headphones, hit record. Lay down a whole song right here.</p>
@@ -215,7 +256,7 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
             <option value="8">8 sec</option>
           </select>
         </label>
-        <label class="check" for="monitor"><input type="checkbox" id="monitor"> Hear myself</label>
+        <label class="check" for="monitor"><input type="checkbox" id="monitor"> Hear myself <span class="note">(can sound doubled)</span></label>
       </div>
     </div>
   </section>
@@ -299,6 +340,21 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
   </section>
 </div>
 
+<div class="dock" id="dock" hidden>
+  <div class="dockscrub">
+    <span class="dtime" id="dTime">0:00.0</span>
+    <input type="range" id="scrub" min="0" max="1" step="0.05" value="0" aria-label="Song position">
+    <span class="dtime dtot" id="dTotal">0:00</span>
+  </div>
+  <div class="cues" id="cues"></div>
+  <div class="dockbtns">
+    <button id="dPlay" type="button"><svg viewBox="0 0 24 24" id="dPlayIcon"><path d="M7 4.5v15l13-7.5z" fill="currentColor"/></svg><span id="dPlayTxt">Play</span></button>
+    <button id="dRec" type="button" class="drec"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5" fill="currentColor"/></svg><span id="dRecTxt">Record</span></button>
+    <button id="dDub" type="button" class="ddub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span id="dDubTxt">Dub</span></button>
+    <button id="dCue" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V4M6 4h11l-2.5 4L17 12H6"/></svg><span>Cue</span></button>
+  </div>
+</div>
+
 <div class="modal" id="modal" hidden>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mTitle">
     <h3 id="mTitle"></h3>
@@ -327,7 +383,7 @@ const S = {
   comp:0, compTouched:false, undo:[], preroll:2, headphonesOk:false,
   beatVol:100, vocalVol:100, autoEst:null, phones:null, hotUntil:0,
   beatBytes:null, isDemo:true, beatDirty:false, beatMetaText:'', removedIds:[], saveReady:false, interrupted:false, micSrc:null,
-  ns:'', artist:false, isLink:false
+  ns:'', artist:false, isLink:false, cues:[], cueCount:0, scrubbing:false
 };
 const BT_DEFAULT_MS = 250;
 const store = {
@@ -448,7 +504,7 @@ async function setBeat(buf, name, meta, bytes){
   }
   stopAll();
   for (const t of S.tracks){ S.removedIds.push(t.id); if (t.node){ try { t.node.disconnect(); } catch(e){} } }
-  S.tracks = []; S.undo = []; S.layerCount = 0;
+  S.tracks = []; S.undo = []; S.layerCount = 0; S.cues = []; S.cueCount = 0; renderCues();
   applyBeat(buf, name, meta);
   S.beatBytes = bytes || null; S.isDemo = !bytes; S.beatDirty = true;
   queueSave();
@@ -508,6 +564,7 @@ async function saveSession(){
     await DB.set('session', {
       v:1, beatName:S.beatName, beatMeta:S.beatMetaText, isDemo:S.isDemo, beatVol:S.beatVol, vocalVol:S.vocalVol,
       pos: Math.min(S.pos, S.beat.duration), layerCount:S.layerCount, nextId:S.nextId, savedAt:Date.now(),
+      cues: S.cues.map(c => ({t:c.t, name:c.name})), cueCount: S.cueCount || 0,
       tracks: S.tracks.map(t => ({id:t.id, name:t.name, lead:t.lead, start:t.start, sr:S.ctx ? S.ctx.sampleRate : 48000, vol:t.vol, muted:t.muted, color:t.color, autoGain:t.autoGain}))
     });
     $('#saved').textContent = S.tracks.length ? 'Saved on this device' : '';
@@ -545,6 +602,7 @@ async function restoreSession(beatAlreadyLoaded){
     S.nextId = Math.max(meta.nextId || 1, ...S.tracks.map(t => t.id + 1));
     S.layerCount = meta.layerCount || 0; S.beatVol = meta.beatVol ?? 100; S.vocalVol = meta.vocalVol ?? 100;
     S.pos = meta.pos || 0;
+    S.cues = (meta.cues || []).map((c, i) => ({id:i + 1, t:c.t, name:c.name})); S.cueCount = meta.cueCount || S.cues.length; renderCues();
     applyLevels(); renderRows(); updateUI(); draw();
     $('#saved').textContent = S.tracks.length ? 'Saved on this device' : '';
     setStatus(S.tracks.length
@@ -824,6 +882,15 @@ function releaseMic(){
 async function record(mode){
   if (!S.beat || S.rec) return;
   if (S.playing) stopAll();
+  if (IN_APP && !S.inAppOk){
+    const ans = await ask({
+      title:"Your song won't save in " + IN_APP,
+      body:'<p>' + IN_APP + "'s built-in browser blocks saving and sharing, so a song recorded here gets stuck inside " + IN_APP + '.</p><p>' + openHow() + '</p>',
+      ok:'Copy link', alt:'Record anyway', cancel:'Cancel'});
+    if (ans === true){ copyPageLink($('#inappCopy')); $('#inapp').scrollIntoView({behavior:'smooth', block:'start'}); return; }
+    if (ans !== 'alt') return;
+    S.inAppOk = true;
+  }
   if (!S.headphonesOk){
     if (S.phones){
       const bt = S.phones === 'bt';
@@ -984,6 +1051,43 @@ function saveBlob(blob, name){
 }
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const IS_ANDROID = /Android/.test(navigator.userAgent);
+
+/* Built-in browsers inside social apps block downloads, sharing and often the mic. */
+const IN_APP = (() => {
+  const ua = navigator.userAgent || '';
+  if (/Instagram/i.test(ua)) return 'Instagram';
+  if (/MessengerForiOS|MessengerLite|Orca-Android|\bMessenger\b/i.test(ua)) return 'Messenger';
+  if (/FBAN|FBAV|FB_IAB|FBIOS/i.test(ua)) return 'Facebook';
+  if (/musical_ly|TikTok|BytedanceWebview/i.test(ua)) return 'TikTok';
+  if (/Snapchat/i.test(ua)) return 'Snapchat';
+  if (/\bTwitter\b/i.test(ua)) return 'X';
+  if (/\bLine\//i.test(ua)) return 'LINE';
+  return null;
+})();
+function openHow(){
+  if (IS_IOS) return 'Tap <b>⋯</b> at the top right and choose <b>Open in Safari</b> (or Open in browser), then record there.';
+  if (IS_ANDROID) return 'Tap the <b>Open in Chrome</b> button below, or tap <b>⋮</b> at the top right and choose <b>Open in Chrome</b>.';
+  return 'Open this link in your regular browser, like Safari or Chrome, then record there.';
+}
+function copyPageLink(btn){
+  const url = location.href;
+  const flash = t => { if (!btn) return; const old = btn.dataset.label || btn.textContent; btn.dataset.label = old; btn.textContent = t; setTimeout(() => { btn.textContent = old; }, 1800); };
+  const fallback = () => { const inp = $('#inappUrl'); inp.focus(); inp.select(); flash('Select it and copy'); };
+  try { navigator.clipboard.writeText(url).then(() => flash('Copied'), fallback); } catch(e){ fallback(); }
+}
+function setupInApp(){
+  if (!IN_APP) return;
+  $('#inapp').hidden = false;
+  $('#inappTitle').textContent = IS_IOS ? 'Open this in Safari to record' : IS_ANDROID ? 'Open this in Chrome to record' : 'Open this in your browser to record';
+  $('#inappBody').innerHTML = "You're inside " + IN_APP + "'s built-in browser. It blocks saving your song and can block the mic. " + openHow();
+  $('#inappUrl').value = location.href;
+  $('#inappCopy').onclick = () => copyPageLink($('#inappCopy'));
+  if (IS_ANDROID){
+    const a = $('#inappChrome');
+    a.href = 'intent://' + location.host + location.pathname + location.search + '#Intent;scheme=https;package=com.android.chrome;end';
+    a.hidden = false;
+  }
+}
 const frame = () => new Promise(r => setTimeout(r, 0));
 function showProg(label, frac){
   $('#prog').hidden = false;
@@ -1083,11 +1187,99 @@ function updateUI(){
   $('#demoBtn').disabled = rec; $('#beatFile').disabled = rec;
   ['#mp3Btn','#wavBtn','#vocBtn'].forEach(s => $(s).disabled = !has || rec || !!S.exporting);
   $('#light').classList.toggle('on', rec);
+  // bottom dock
+  const showDock = hasBeat && !document.body.classList.contains('making');
+  $('#dock').hidden = !showDock; document.body.classList.toggle('hasdock', showDock);
+  $('#dPlay').disabled = !hasBeat;
+  $('#dPlayTxt').textContent = (S.playing || rec) ? 'Stop' : 'Play';
+  $('#dPlayIcon').innerHTML = $('#playIcon').innerHTML;
+  $('#dRec').disabled = recBtn.disabled; $('#dDub').disabled = overBtn.disabled;
+  $('#dRec').classList.toggle('active', rec && S.rec.mode === 'lead');
+  $('#dDub').classList.toggle('active', rec && S.rec.mode === 'layer');
+  $('#dRecTxt').textContent = rec && S.rec.mode === 'lead' ? 'Stop' : 'Record';
+  $('#dDubTxt').textContent = rec && S.rec.mode === 'layer' ? 'Stop' : 'Dub';
+  $('#dCue').disabled = !hasBeat;
+  $('#scrub').disabled = !hasBeat || rec;
+  if (hasBeat){ $('#scrub').max = S.beat.duration.toFixed(2); $('#dTotal').textContent = fmt(S.beat.duration).replace(/\.\d$/, ''); }
+  if (S.playing || rec) touchActive();
+  updateDock();
 }
-function sliderRow({name, color, vol, onVol, muted, onMute, onDel, master}){
+function updateDock(){
+  if (!S.beat || S.scrubbing) return;
+  const p = Math.min(curPos(), S.beat.duration);
+  $('#dTime').textContent = fmt(p);
+  $('#scrub').value = p.toFixed(2);
+}
+
+/* ---------- keep the screen awake while working ---------- */
+let wakeLock = null, lastActive = 0;
+const IDLE_MS = 5*60*1000;
+async function setAwake(on){
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (on && !wakeLock && document.visibilityState === 'visible'){
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock){ const w = wakeLock; wakeLock = null; await w.release(); }
+  } catch(e){ wakeLock = null; }
+}
+function touchActive(){ lastActive = Date.now(); if (S.beat) setAwake(true); }
+setInterval(() => { if (!S.playing && !S.rec && Date.now() - lastActive > IDLE_MS) setAwake(false); }, 30000);
+['pointerdown','keydown'].forEach(ev => document.addEventListener(ev, touchActive, {passive:true}));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastActive < IDLE_MS) setAwake(true); });
+
+/* ---------- seeking and cue markers ---------- */
+function seekTo(t){
+  if (!S.beat || S.rec) return;
+  S.pos = Math.max(0, Math.min(t, S.beat.duration));
+  if (S.playing) startPlayback(S.pos);
+  draw(); updateDock();
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function askName(title, current, withDelete){
+  const p = ask({title, body:'<input class="fld" id="nameFld" maxlength="40" value="' + esc(current) + '" autocomplete="off">', ok:'Save', alt: withDelete ? 'Delete' : null, cancel:'Cancel'});
+  const fld = $('#nameFld');
+  if (fld){ fld.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); $('#mOk').click(); } }; setTimeout(() => { fld.focus(); fld.select(); }, 30); }
+  const ans = await p;
+  const val = (($('#nameFld') || {}).value || '').trim();
+  return ans === true ? (val || current) : ans === 'alt' ? 'DELETE' : null;
+}
+function addCue(){
+  if (!S.beat) return;
+  const t = Math.min(curPos(), S.beat.duration);
+  if (S.cues.some(c => Math.abs(c.t - t) < 0.5)) return;
+  S.cueCount = (S.cueCount || 0) + 1;
+  S.cues.push({id: Date.now() + Math.random(), t, name: 'Cue ' + S.cueCount});
+  S.cues.sort((a, b) => a.t - b.t);
+  renderCues(); draw(); queueSave();
+}
+function renderCues(){
+  const box = $('#cues'); box.innerHTML = '';
+  if (!S.cues.length){ const h = document.createElement('span'); h.className = 'cuehint'; h.textContent = 'Tap Cue to mark a spot, like Verse 2 or the hook. Tap it later to jump there.'; box.append(h); return; }
+  for (const c of S.cues){
+    const w = document.createElement('div'); w.className = 'cue';
+    const j = document.createElement('button'); j.type = 'button'; j.className = 'cjump';
+    j.innerHTML = '<b></b><span></span>'; j.querySelector('b').textContent = c.name; j.querySelector('span').textContent = fmt(c.t).replace(/\.\d$/, '');
+    j.onclick = () => seekTo(c.t);
+    const e = document.createElement('button'); e.type = 'button'; e.className = 'cedit'; e.textContent = '⋯'; e.setAttribute('aria-label', 'Rename or delete ' + c.name);
+    e.onclick = async () => {
+      const r = await askName('Rename cue', c.name, true);
+      if (r === 'DELETE') S.cues = S.cues.filter(x => x !== c);
+      else if (r) c.name = r;
+      else return;
+      renderCues(); draw(); queueSave();
+    };
+    w.append(j, e); box.append(w);
+  }
+}
+function sliderRow({name, color, vol, onVol, muted, onMute, onDel, onRename, master}){
   const row = document.createElement('div'); row.className = 'row' + (master ? ' master' : '');
   const sw = document.createElement('div'); sw.className = 'sw'; sw.style.background = color;
   const nm = document.createElement('div'); nm.className = 'rname'; nm.textContent = name;
+  if (onRename){
+    nm.classList.add('renamable'); nm.tabIndex = 0; nm.setAttribute('role', 'button'); nm.title = 'Tap to rename';
+    nm.onclick = onRename; nm.onkeydown = e => { if (e.key === 'Enter') onRename(); };
+  }
   const r = document.createElement('input'); r.type = 'range'; r.min = 0; r.max = 150; r.value = vol; r.setAttribute('aria-label', name + ' volume');
   const p = document.createElement('div'); p.className = 'pct'; p.textContent = vol + '%';
   r.addEventListener('input', () => { p.textContent = r.value + '%'; onVol(+r.value); });
@@ -1114,14 +1306,15 @@ function renderRows(){
   box.append(sliderRow({name:'Beat', color:css('--brass'), vol:S.beatVol, onVol:v => { S.beatVol = v; applyLevels(); queueSave(800); }, master:true}));
   box.append(sliderRow({name:'All vocals', color:css('--text'), vol:S.vocalVol, onVol:v => { S.vocalVol = v; applyLevels(); queueSave(800); }, master:true}));
   if (!S.tracks.length){
-    const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'Your takes show up here with their own volume, mute and delete.';
+    const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'Your takes show up here with their own volume, mute and delete. Tap a take\'s name to rename it.';
     box.append(e); return;
   }
   for (const t of S.tracks){
     box.append(sliderRow({name:t.name, color:t.color, vol:t.vol, muted:t.muted,
       onVol:v => { t.vol = v; applyLevels(); queueSave(800); },
       onMute:() => { t.muted = !t.muted; applyLevels(); draw(); queueSave(); return t.muted; },
-      onDel:() => { removeTrack(t); setStatus(t.name + ' deleted.'); renderRows(); updateUI(); draw(); }}));
+      onDel:() => { removeTrack(t); setStatus(t.name + ' deleted.'); renderRows(); updateUI(); draw(); },
+      onRename: async () => { const r = await askName('Rename take', t.name, false); if (r){ t.name = r; renderRows(); queueSave(); } }}));
   }
 }
 
@@ -1174,21 +1367,27 @@ function draw(){
     g.fillStyle = 'rgba(239,74,74,.35)'; g.fillRect(X(S.rec.pos), top + li*(LANE+GAP), X(pos) - X(S.rec.pos), LANE);
   }
   if (S.rec){ g.fillStyle = css('--rec'); g.fillRect(Math.round(X(S.rec.pos)), RULER, 2, H - RULER); }
+  // cue markers
+  if (S.cues.length){
+    g.font = '600 10px ' + css('--sans'); g.textBaseline = 'middle';
+    for (const c of S.cues){
+      const x = Math.round(X(c.t));
+      g.fillStyle = brass; g.globalAlpha = 0.55; g.fillRect(x, RULER, 1, H - RULER); g.globalAlpha = 1;
+      g.beginPath(); g.moveTo(x, 2); g.lineTo(x + 9, 2); g.lineTo(x + 6, 7); g.lineTo(x + 9, 12); g.lineTo(x, 12); g.closePath(); g.fill();
+    }
+  }
   // playhead
   g.fillStyle = css('--text'); g.fillRect(Math.round(playX), 0, 2, H);
 }
 function seekFromEvent(e){
   if (!S.beat || S.rec) return;
   const r = $('#cv').getBoundingClientRect();
-  const t = Math.max(0, Math.min(1, (e.clientX - r.left)/r.width))*S.beat.duration;
-  S.pos = t;
-  if (S.playing) startPlayback(t);
-  draw();
+  seekTo(Math.max(0, Math.min(1, (e.clientX - r.left)/r.width))*S.beat.duration);
 }
 
 /* ---------- loop ---------- */
 function loop(){
-  if (S.playing || S.rec) draw();
+  if (S.playing || S.rec){ draw(); updateDock(); }
   if (S.playing && S.beat && curPos() >= S.beat.duration){ S.pos = S.beat.duration; if (S.rec) stopRecording(); stopSources(); S.playing = false; if (!S.rec) { S.pos = 0; setStatus('End of the beat.'); } updateUI(); draw(); }
   if (S.analyser){
     const a = new Float32Array(S.analyser.fftSize); S.analyser.getFloatTimeDomainData(a);
@@ -1208,12 +1407,25 @@ $('#demoBtn').onclick = () => { ensureCtx(); loadDemo(); };
 $('#playBtn').onclick = togglePlay;
 $('#recBtn').onclick = () => S.rec ? stopAll() : record('lead');
 $('#overBtn').onclick = () => S.rec ? stopAll() : record('layer');
-$('#startBtn').onclick = () => { S.pos = 0; if (S.playing) startPlayback(0); draw(); };
+$('#startBtn').onclick = () => seekTo(0);
+$('#dPlay').onclick = togglePlay;
+$('#dRec').onclick = () => S.rec ? stopAll() : record('lead');
+$('#dDub').onclick = () => S.rec ? stopAll() : record('layer');
+$('#dCue').onclick = addCue;
+const scrub = $('#scrub');
+scrub.addEventListener('pointerdown', () => { S.scrubbing = true; });
+scrub.addEventListener('touchstart', () => { S.scrubbing = true; }, {passive:true});
+scrub.addEventListener('input', () => {
+  S.scrubbing = true; $('#dTime').textContent = fmt(+scrub.value);
+  if (!S.playing){ S.pos = +scrub.value; draw(); }
+});
+scrub.addEventListener('change', () => { S.scrubbing = false; seekTo(+scrub.value); });
 $('#undoBtn').onclick = undoTake;
 $('#clearBtn').onclick = async () => {
   const ok = await ask({title:'Start a new song?', body:'<p>This clears every take and keeps the beat loaded. Download anything you want to keep first.</p>', ok:'Clear takes', cancel:'Cancel'});
   if (!ok) return;
   stopAll(); for (const t of [...S.tracks]) removeTrack(t); S.undo = []; S.layerCount = 0; S.pos = 0;
+  S.cues = []; S.cueCount = 0; renderCues(); queueSave();
   setStatus('Fresh start. Same beat.'); renderRows(); updateUI(); draw();
 };
 $('#mp3Btn').onclick = () => doExport('mp3');
@@ -1355,6 +1567,7 @@ async function startMaker(){
 const params = new URLSearchParams(location.search);
 const linkBeat = parseLink(params);
 renderRows(); updateUI(); requestAnimationFrame(loop);
+setupInApp(); renderCues();
 if (params.has('make')) startMaker();
 else if (linkBeat) startArtist(linkBeat);
 else restoreSession().then(ok => { S.saveReady = true; if (!ok) loadDemo(); });
