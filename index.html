@@ -71,7 +71,11 @@ select{font:500 14px var(--sans);color:var(--text);background:var(--panel2);bord
 .hint b{color:var(--text);font-weight:600}
 .mixer h2,.export h2{font:700 20px/1 var(--display);letter-spacing:.04em;text-transform:uppercase;margin:0 0 12px}
 .rows{display:flex;flex-direction:column;gap:8px}
-.row{display:grid;grid-template-columns:10px minmax(80px,140px) 1fr 48px auto auto;align-items:center;gap:10px;padding:8px 10px;background:var(--panel2);border-radius:10px}
+.small.arm{gap:6px}
+.small.arm .adot{width:9px;height:9px;border-radius:50%;border:2px solid var(--rec);display:inline-block}
+.small.arm.armed{background:var(--rec);border-color:var(--rec);color:#fff}
+.small.arm.armed .adot{background:#fff;border-color:#fff}
+.row{display:grid;grid-template-columns:10px minmax(80px,140px) 1fr 48px auto auto auto;align-items:center;gap:10px;padding:8px 10px;background:var(--panel2);border-radius:10px}
 .row.master{background:transparent;border:1px dashed var(--line)}
 .sw{width:10px;height:28px;border-radius:3px}
 .rname{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -176,8 +180,12 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
   .logo{font-size:38px}
   .transport{grid-template-columns:repeat(2,minmax(0,1fr))}
   .transport .rec,.transport .over{grid-column:span 1}
-  .row{grid-template-columns:10px minmax(0,1fr) auto auto;grid-template-areas:"s n m d" "s r r p"}
-  .row.master{grid-template-areas:"s n n p" "s r r r"}
+  .row{grid-template-columns:10px minmax(0,1fr) auto auto auto;grid-template-areas:"s n a m d" "s r r r p"}
+  .row.master{grid-template-areas:"s n n n p" "s r r r r"}
+  .row .arm{grid-area:a}
+  .row{gap:8px}
+  .row .small{padding:0 8px;font-size:12px;min-height:32px}
+  .row .small.arm{gap:5px}
   .row .sw{grid-area:s;height:100%}
   .row .rname{grid-area:n}
   .row input[type=range]{grid-area:r}
@@ -257,6 +265,7 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
           </select>
         </label>
         <label class="check" for="monitor"><input type="checkbox" id="monitor"> Hear myself <span class="note">(can sound doubled)</span></label>
+        <label class="check" for="punchOut"><input type="checkbox" id="punchOut"> Stop at next cue</label>
       </div>
     </div>
   </section>
@@ -383,7 +392,7 @@ const S = {
   comp:0, compTouched:false, undo:[], preroll:2, headphonesOk:false,
   beatVol:100, vocalVol:100, autoEst:null, phones:null, hotUntil:0,
   beatBytes:null, isDemo:true, beatDirty:false, beatMetaText:'', removedIds:[], saveReady:false, interrupted:false, micSrc:null,
-  ns:'', artist:false, isLink:false, cues:[], cueCount:0, scrubbing:false
+  ns:'', artist:false, isLink:false, cues:[], cueCount:0, scrubbing:false, armedId:null, punchOut:false
 };
 const BT_DEFAULT_MS = 250;
 const store = {
@@ -504,7 +513,7 @@ async function setBeat(buf, name, meta, bytes){
   }
   stopAll();
   for (const t of S.tracks){ S.removedIds.push(t.id); if (t.node){ try { t.node.disconnect(); } catch(e){} } }
-  S.tracks = []; S.undo = []; S.layerCount = 0; S.cues = []; S.cueCount = 0; renderCues();
+  S.tracks = []; S.undo = []; S.layerCount = 0; S.cues = []; S.cueCount = 0; S.armedId = null; renderCues();
   applyBeat(buf, name, meta);
   S.beatBytes = bytes || null; S.isDemo = !bytes; S.beatDirty = true;
   queueSave();
@@ -564,7 +573,7 @@ async function saveSession(){
     await DB.set('session', {
       v:1, beatName:S.beatName, beatMeta:S.beatMetaText, isDemo:S.isDemo, beatVol:S.beatVol, vocalVol:S.vocalVol,
       pos: Math.min(S.pos, S.beat.duration), layerCount:S.layerCount, nextId:S.nextId, savedAt:Date.now(),
-      cues: S.cues.map(c => ({t:c.t, name:c.name})), cueCount: S.cueCount || 0,
+      cues: S.cues.map(c => ({t:c.t, name:c.name})), cueCount: S.cueCount || 0, armedId: S.armedId,
       tracks: S.tracks.map(t => ({id:t.id, name:t.name, lead:t.lead, start:t.start, sr:S.ctx ? S.ctx.sampleRate : 48000, vol:t.vol, muted:t.muted, color:t.color, autoGain:t.autoGain}))
     });
     $('#saved').textContent = S.tracks.length ? 'Saved on this device' : '';
@@ -603,6 +612,7 @@ async function restoreSession(beatAlreadyLoaded){
     S.layerCount = meta.layerCount || 0; S.beatVol = meta.beatVol ?? 100; S.vocalVol = meta.vocalVol ?? 100;
     S.pos = meta.pos || 0;
     S.cues = (meta.cues || []).map((c, i) => ({id:i + 1, t:c.t, name:c.name})); S.cueCount = meta.cueCount || S.cues.length; renderCues();
+    S.armedId = S.tracks.some(t => t.id === meta.armedId) ? meta.armedId : null;
     applyLevels(); renderRows(); updateUI(); draw();
     $('#saved').textContent = S.tracks.length ? 'Saved on this device' : '';
     setStatus(S.tracks.length
@@ -909,18 +919,25 @@ async function record(mode){
   const ctx = S.ctx, sr = ctx.sampleRate;
   const pos = S.pos >= S.beat.duration - 0.25 ? 0 : S.pos;
   const from = Math.max(0, pos - S.preroll);
-  const lead = mode === 'lead' ? leadTrack() : null;
-  const t0 = startPlayback(from, lead ? {cutTrack:lead, cutSongPos:pos} : {});
+  const target = mode === 'lead' ? armedTrack() : null;
+  const t0 = startPlayback(from, target ? {cutTrack:target, cutSongPos:pos} : {});
   const startFrame = Math.round((t0 + (pos - from))*sr);
-  S.rec = {mode, pos, startFrame, chunks:[], stopping:false, timer:null};
+  // Optional auto punch-out at the next cue after the punch-in point
+  const nextCue = S.punchOut ? S.cues.find(c => c.t > pos + 0.5) : null;
+  const outAt = nextCue ? nextCue.t : null;
+  S.rec = {mode, pos, startFrame, chunks:[], stopping:false, timer:null, targetId: target ? target.id : null,
+    outAt, outFrame: outAt != null ? startFrame + Math.round((outAt - pos)*sr) : null};
   S.recNode.port.postMessage({cmd:'start', startFrame});
-  setStatus(from < pos ? 'Lead-in… recording starts at ' + fmt(pos) : 'Recording…');
+  const into = target && !target.lead ? ' into ' + target.name : '';
+  const until = nextCue ? ', stops at ' + nextCue.name : '';
+  setStatus((from < pos ? 'Lead-in… recording' + into + ' starts at ' + fmt(pos) : 'Recording' + into) + until + '…');
   updateUI();
 }
 function stopRecording(){
   const r = S.rec; if (!r || r.stopping) return;
   r.stopping = true;
-  S.recNode.port.postMessage({cmd:'stop', stopFrame: Math.round(S.ctx.currentTime*S.ctx.sampleRate)});
+  const nowFrame = Math.round(S.ctx.currentTime*S.ctx.sampleRate);
+  S.recNode.port.postMessage({cmd:'stop', stopFrame: r.outFrame != null ? Math.min(nowFrame, r.outFrame) : nowFrame});
   r.timer = setTimeout(commitRecording, 1200);
   if (S.playing){ stopSources(); S.playing = false; }
 }
@@ -939,17 +956,17 @@ function commitRecording(){
   if (!r.chunks.length){ setStatus(wasInterrupted ? 'The take got interrupted before it started. Tap Record vocals when you are ready.' : 'Nothing recorded. The take stopped during the lead-in.'); updateUI(); draw(); return; }
   const sr = S.ctx.sampleRate;
   const first = r.chunks[0].frame, lastC = r.chunks[r.chunks.length-1];
-  const total = lastC.frame + lastC.data.length - first;
+  let total = lastC.frame + lastC.data.length - first;
+  if (r.outFrame != null) total = Math.max(0, Math.min(total, r.outFrame - first));
+  if (!total){ setStatus('Nothing recorded before the punch-out cue.'); updateUI(); draw(); return; }
   const data = new Float32Array(total);
-  for (const c of r.chunks) data.set(c.data, c.frame - first);
+  for (const c of r.chunks){ const o = c.frame - first; if (o < total) data.set(o + c.data.length > total ? c.data.subarray(0, total - o) : c.data, o); }
   const idx = Math.max(0, Math.round(r.pos*sr) + (first - r.startFrame));
   let track, entry;
-  if (r.mode === 'lead' && leadTrack()){
-    track = leadTrack();
-    const need = idx + total;
-    if (track.data.length < need){ const nd = new Float32Array(need); nd.set(track.data); track.data = nd; }
-    entry = {id:track.id, created:false, idx, prev: track.data.slice(idx, idx + total)};
-    track.data.set(data, idx);
+  const target = r.mode === 'lead' ? (S.tracks.find(t => t.id === r.targetId) || leadTrack()) : null;
+  if (target){
+    track = target;
+    entry = writeInto(track, idx, data);
   } else if (r.mode === 'lead'){
     track = createTrack(true, 0, idx + total);
     track.data.set(data, idx);
@@ -980,14 +997,39 @@ function undoTake(){
   const t = S.tracks.find(x => x.id === u.id);
   if (t){
     if (u.created){ removeTrack(t, true); }
-    else { t.data.set(u.prev, u.idx); t.buf = null; t.peaks = null; t.dirty = true; computeAutoGain(t); applyLevels(); }
+    else {
+      t.data.set(u.prev, u.idx - t.start);
+      if (t.start !== u.prevStart || t.data.length !== u.prevLen){
+        const off = u.prevStart - t.start;
+        t.data = t.data.slice(off, off + u.prevLen); t.start = u.prevStart;
+      }
+      t.buf = null; t.peaks = null; t.dirty = true; computeAutoGain(t); applyLevels();
+    }
   }
   queueSave();
   setStatus('Last take undone.');
   renderRows(); updateUI(); draw();
 }
+/* Punch a recording into any take. Grows the take if the punch goes past either end,
+   and returns an undo entry holding only the overwritten samples. */
+function writeInto(t, idx, data){
+  const oldStart = t.start, oldLen = t.data.length;
+  const newStart = Math.min(oldStart, idx), newEnd = Math.max(oldStart + oldLen, idx + data.length);
+  if (newStart !== oldStart || newEnd - newStart !== oldLen){
+    const arr = new Float32Array(newEnd - newStart); arr.set(t.data, oldStart - newStart);
+    t.data = arr; t.start = newStart;
+  }
+  const rel = idx - t.start;
+  const entry = {id:t.id, created:false, idx, prev:t.data.slice(rel, rel + data.length), prevStart:oldStart, prevLen:oldLen};
+  t.data.set(data, rel);
+  return entry;
+}
+function armedTrack(){
+  return (S.armedId != null && S.tracks.find(t => t.id === S.armedId)) || leadTrack();
+}
 function removeTrack(t, fromUndo){
   if (S.playing) stopAll();
+  if (S.armedId === t.id) S.armedId = null;
   S.tracks = S.tracks.filter(x => x !== t);
   if (t.node){ try { t.node.disconnect(); } catch(e){} }
   if (!fromUndo) S.undo = S.undo.filter(u => u.id !== t.id);
@@ -1176,7 +1218,8 @@ function updateUI(){
   overBtn.disabled = !hasBeat || (rec && S.rec.mode !== 'layer');
   recBtn.classList.toggle('active', rec && S.rec.mode === 'lead');
   overBtn.classList.toggle('active', rec && S.rec.mode === 'layer');
-  recBtn.querySelector('span').textContent = rec && S.rec.mode === 'lead' ? 'Stop recording' : (leadTrack() ? 'Record vocals' : 'Record vocals');
+  const armed = armedTrack();
+  recBtn.querySelector('span').textContent = rec && S.rec.mode === 'lead' ? 'Stop recording' : (armed && !armed.lead ? 'Record into ' + armed.name : 'Record vocals');
   overBtn.querySelector('span').textContent = rec && S.rec.mode === 'layer' ? 'Stop overdub' : 'Overdub';
   $('#playBtn').disabled = !hasBeat;
   $('#playTxt').textContent = (S.playing || rec) ? 'Stop' : 'Play';
@@ -1272,7 +1315,7 @@ function renderCues(){
     w.append(j, e); box.append(w);
   }
 }
-function sliderRow({name, color, vol, onVol, muted, onMute, onDel, onRename, master}){
+function sliderRow({name, color, vol, onVol, muted, onMute, onDel, onRename, armed, onArm, master}){
   const row = document.createElement('div'); row.className = 'row' + (master ? ' master' : '');
   const sw = document.createElement('div'); sw.className = 'sw'; sw.style.background = color;
   const nm = document.createElement('div'); nm.className = 'rname'; nm.textContent = name;
@@ -1285,19 +1328,23 @@ function sliderRow({name, color, vol, onVol, muted, onMute, onDel, onRename, mas
   r.addEventListener('input', () => { p.textContent = r.value + '%'; onVol(+r.value); });
   row.append(sw, nm, r, p);
   if (onMute){
+    const a = document.createElement('button'); a.type = 'button'; a.className = 'small arm' + (armed ? ' armed' : '');
+    a.innerHTML = '<span class="adot"></span>Arm'; a.setAttribute('aria-pressed', !!armed);
+    a.title = armed ? 'Record goes into this take' : 'Make Record go into this take';
+    a.onclick = onArm;
+    row.append(a);
     const m = document.createElement('button'); m.type = 'button'; m.className = 'small mute' + (muted ? ' on' : ''); m.textContent = 'Mute'; m.setAttribute('aria-pressed', muted);
     m.onclick = () => { const v = onMute(); m.classList.toggle('on', v); m.setAttribute('aria-pressed', v); };
     const d = document.createElement('button'); d.type = 'button'; d.className = 'small danger del'; d.textContent = 'Delete';
-    let armed = null;
+    let delTimer = null;
     d.onclick = () => {
-      if (armed){ clearTimeout(armed); onDel(); return; }
+      if (delTimer){ clearTimeout(delTimer); onDel(); return; }
       d.textContent = 'Sure?'; d.classList.add('confirm');
-      armed = setTimeout(() => { armed = null; d.textContent = 'Delete'; d.classList.remove('confirm'); }, 3000);
+      delTimer = setTimeout(() => { delTimer = null; d.textContent = 'Delete'; d.classList.remove('confirm'); }, 3000);
     };
     row.append(m, d);
   } else {
-    const a = document.createElement('div'); a.className = 'spacer'; const b = document.createElement('div'); b.className = 'spacer';
-    row.append(a, b);
+    for (let i = 0; i < 3; i++){ const s = document.createElement('div'); s.className = 'spacer'; row.append(s); }
   }
   return row;
 }
@@ -1314,7 +1361,15 @@ function renderRows(){
       onVol:v => { t.vol = v; applyLevels(); queueSave(800); },
       onMute:() => { t.muted = !t.muted; applyLevels(); draw(); queueSave(); return t.muted; },
       onDel:() => { removeTrack(t); setStatus(t.name + ' deleted.'); renderRows(); updateUI(); draw(); },
-      onRename: async () => { const r = await askName('Rename take', t.name, false); if (r){ t.name = r; renderRows(); queueSave(); } }}));
+      onRename: async () => { const r = await askName('Rename take', t.name, false); if (r){ t.name = r; renderRows(); updateUI(); queueSave(); } },
+      armed: armedTrack() === t,
+      onArm: () => {
+        if (S.rec) return;
+        S.armedId = (armedTrack() === t && !t.lead) ? null : t.id;
+        const now = armedTrack();
+        setStatus(now ? 'Record now goes into ' + now.name + '. Tap the waveform or a cue to pick the punch-in spot.' : 'Record now makes the lead vocal.');
+        renderRows(); updateUI(); queueSave();
+      }}));
   }
 }
 
@@ -1363,7 +1418,8 @@ function draw(){
   });
   // recording region
   if (S.rec && pos > S.rec.pos){
-    const li = S.rec.mode === 'lead' && leadTrack() ? 0 : lanes - 1;
+    const ti = S.rec.targetId != null ? S.tracks.findIndex(t => t.id === S.rec.targetId) : -1;
+    const li = ti >= 0 ? ti : lanes - 1;
     g.fillStyle = 'rgba(239,74,74,.35)'; g.fillRect(X(S.rec.pos), top + li*(LANE+GAP), X(pos) - X(S.rec.pos), LANE);
   }
   if (S.rec){ g.fillStyle = css('--rec'); g.fillRect(Math.round(X(S.rec.pos)), RULER, 2, H - RULER); }
@@ -1373,7 +1429,8 @@ function draw(){
     for (const c of S.cues){
       const x = Math.round(X(c.t));
       g.fillStyle = brass; g.globalAlpha = 0.55; g.fillRect(x, RULER, 1, H - RULER); g.globalAlpha = 1;
-      g.beginPath(); g.moveTo(x, 2); g.lineTo(x + 9, 2); g.lineTo(x + 6, 7); g.lineTo(x + 9, 12); g.lineTo(x, 12); g.closePath(); g.fill();
+      const fy = RULER + 2;
+      g.beginPath(); g.moveTo(x, fy); g.lineTo(x + 9, fy); g.lineTo(x + 6, fy + 5); g.lineTo(x + 9, fy + 10); g.lineTo(x, fy + 10); g.closePath(); g.fill();
     }
   }
   // playhead
@@ -1388,6 +1445,7 @@ function seekFromEvent(e){
 /* ---------- loop ---------- */
 function loop(){
   if (S.playing || S.rec){ draw(); updateDock(); }
+  if (S.rec && !S.rec.stopping && S.rec.outAt != null && curPos() >= S.rec.outAt + 0.15){ stopAll(); setStatus('Punched out at the cue.'); }
   if (S.playing && S.beat && curPos() >= S.beat.duration){ S.pos = S.beat.duration; if (S.rec) stopRecording(); stopSources(); S.playing = false; if (!S.rec) { S.pos = 0; setStatus('End of the beat.'); } updateUI(); draw(); }
   if (S.analyser){
     const a = new Float32Array(S.analyser.fftSize); S.analyser.getFloatTimeDomainData(a);
@@ -1425,13 +1483,18 @@ $('#clearBtn').onclick = async () => {
   const ok = await ask({title:'Start a new song?', body:'<p>This clears every take and keeps the beat loaded. Download anything you want to keep first.</p>', ok:'Clear takes', cancel:'Cancel'});
   if (!ok) return;
   stopAll(); for (const t of [...S.tracks]) removeTrack(t); S.undo = []; S.layerCount = 0; S.pos = 0;
-  S.cues = []; S.cueCount = 0; renderCues(); queueSave();
+  S.cues = []; S.cueCount = 0; S.armedId = null; renderCues(); queueSave();
   setStatus('Fresh start. Same beat.'); renderRows(); updateUI(); draw();
 };
 $('#mp3Btn').onclick = () => doExport('mp3');
 $('#wavBtn').onclick = () => doExport('wav');
 $('#vocBtn').onclick = () => doExport('voc');
 $('#preroll').onchange = e => { S.preroll = +e.target.value; };
+S.punchOut = store.get('punchOut') === '1'; $('#punchOut').checked = S.punchOut;
+$('#punchOut').onchange = e => {
+  S.punchOut = e.target.checked; store.set('punchOut', S.punchOut ? '1' : '0');
+  setStatus(S.punchOut ? 'Recording will stop by itself at the next cue after where you start.' : 'Recording runs until you tap Stop.');
+};
 $('#monitor').onchange = e => {
   if (S.monitorGain) S.monitorGain.gain.value = e.target.checked ? 1 : 0;
   if (e.target.checked && !S.mic) ensureMic().then(ok => { if (!ok) e.target.checked = false; });
