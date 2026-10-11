@@ -1585,6 +1585,56 @@ async function startArtist(L){
     setStatus("Couldn't load the beat.", true);
   }
 }
+/* ---------- Supabase beat links: verseback.com/b/CODE ---------- */
+const SB_URL = window.VB_SB_URL || 'https://hrvipdfinyjlvdjuktmq.supabase.co';
+const SB_KEY = 'sb_publishable_K0IrrLzK3mLgWwQ8QQ3BZw_CwKqMJiV';
+async function sbAnon(path, body){
+  const r = await fetch(SB_URL + path, {method:'POST', headers:{apikey:SB_KEY, 'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const t = await r.text(); let d = null; try { d = t ? JSON.parse(t) : null; } catch(e){}
+  if (!r.ok){ const e = new Error((d && (d.message || d.error)) || ('Error ' + r.status)); e.status = r.status; throw e; }
+  return d;
+}
+function cloudCode(){
+  const m = location.pathname.match(/^\/b\/([a-z0-9]{4,16})\/?$/i);
+  if (m) return m[1].toLowerCase();
+  const c = params.get('c'); return c && /^[a-z0-9]{4,16}$/i.test(c) ? c.toLowerCase() : null;
+}
+async function startCloud(code){
+  S.artist = true; S.isLink = true; S.isDemo = false; S.ns = 'c:' + code + ':';
+  document.body.classList.add('artist');
+  $('#tag').textContent = 'Your beat is loaded. Put on headphones, hit record, and lay down your song.';
+  $('#beatName').textContent = 'Loading your beat…';
+  setStatus('Loading the beat…');
+  try {
+    ensureCtx();
+    const rows = await sbAnon('/rest/v1/rpc/get_beat', {p_code: code});
+    const b = rows && rows[0];
+    if (!b){
+      $('#beatName').textContent = 'This beat link is off';
+      $('#beatMeta').textContent = 'The producer turned this link off or removed the beat. Ask them for a new link.';
+      setStatus('This link is not active right now.', true);
+      return;
+    }
+    document.title = b.title + ' · VerseBack';
+    if (b.producer_name){ $('#beatBy').textContent = 'Produced by ' + b.producer_name; $('#beatBy').hidden = false; }
+    $('#beatName').textContent = 'Loading ' + b.title + '…';
+    const signed = await sbAnon('/storage/v1/object/sign/beats/' + b.file_path.split('/').map(encodeURIComponent).join('/'), {expiresIn: 3600});
+    const rel = signed && (signed.signedURL || signed.signedUrl);
+    if (!rel) throw new Error('No signed link');
+    const url = /^https?:/.test(rel) ? rel : SB_URL + '/storage/v1' + rel;
+    const ab = await fetchBeat(url, p => { $('#beatName').textContent = 'Loading ' + b.title + '… ' + Math.round(p*100) + '%'; });
+    const buf = await decode(ab);
+    applyBeat(buf, b.title, '');
+    const restored = await restoreSession(true);
+    S.saveReady = true;
+    if (!restored) setStatus('Beat loaded. Put on headphones and hit Record vocals.');
+  } catch (e){
+    $('#beatName').textContent = "This beat link isn't working";
+    $('#beatMeta').textContent = 'Check your connection and reload. If it still fails, ask the producer to send the link again.';
+    setStatus("Couldn't load the beat.", true);
+  }
+}
+
 function linkFor(file){
   const by = ($('#byName').value || '').trim();
   return location.origin + location.pathname + '?b=' + encodeURIComponent(file.replace(/\.mp3$/i, '')) + (by ? '&by=' + encodeURIComponent(by) : '');
@@ -1632,7 +1682,9 @@ const params = new URLSearchParams(location.search);
 const linkBeat = parseLink(params);
 renderRows(); updateUI(); requestAnimationFrame(loop);
 setupInApp(); renderCues();
+const cCode = cloudCode();
 if (params.has('make')) startMaker();
+else if (cCode) startCloud(cCode);
 else if (linkBeat) startArtist(linkBeat);
 else restoreSession().then(ok => { S.saveReady = true; if (!ok) loadDemo(); });
 window.__booth = S;

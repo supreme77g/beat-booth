@@ -1,0 +1,4 @@
+# Beat links: verseback.com/b/CODE opens the booth with that beat
+/b/*      /index.html    200
+# Producer studio
+/studio   /studio.html   200

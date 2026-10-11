@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VerseBack Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<style>
+:root{
+  color-scheme: dark;
+  --bg:#12161D; --panel:#1A2029; --panel2:#212935; --line:#2E3846;
+  --text:#ECE7DD; --muted:#9AA3B2; --dim:#5B6576;
+  --brass:#E3A94B; --brass-ink:#1B1406; --rec:#EF4A4A; --ok:#9BD17A;
+  --display:"Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --sans:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.5 var(--sans);padding-inline:16px;padding-block:18px 60px;padding-top:max(18px, env(safe-area-inset-top));-webkit-tap-highlight-color:transparent}
+.wrap{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+[hidden]{display:none!important}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px;font:800 40px/0.9 var(--display);letter-spacing:.04em;margin:0}
+.logo .back{color:var(--brass)}
+.pill{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.12em;color:var(--brass-ink);background:var(--brass);border-radius:999px;padding:5px 9px;align-self:center}
+.who{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
+.who b{color:var(--text);font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+h2{font:700 22px/1 var(--display);letter-spacing:.04em;text-transform:uppercase;margin:0 0 12px}
+.lede{color:var(--muted);margin:0 0 14px;max-width:60ch}
+label.f{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:14px}
+input[type=text],input[type=email],input[type=password]{font:16px var(--sans);color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;min-height:46px;width:100%}
+.form{display:flex;flex-direction:column;gap:12px;max-width:420px}
+button,.btn{font:600 15px/1 var(--sans);color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:10px;min-height:46px;padding:0 16px;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;text-decoration:none;white-space:nowrap}
+button:hover:not(:disabled),.btn:hover{border-color:var(--dim)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible,.btn:focus-visible,input:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.primary{background:var(--brass);color:var(--brass-ink);border-color:var(--brass)}
+.small{min-height:36px;padding:0 12px;font-size:13px}
+.link{background:none;border:0;color:var(--brass);padding:0;min-height:0;font-weight:500;text-decoration:underline;text-underline-offset:3px}
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tabs button{flex:1;max-width:210px}
+.tabs button.on{background:var(--brass);color:var(--brass-ink);border-color:var(--brass)}
+.msg{font-size:14px;min-height:1.4em;color:var(--muted)}
+.msg.err{color:#ffb3b3}
+.msg.ok{color:var(--ok)}
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed var(--line);border-radius:12px;padding:22px 14px;text-align:center;cursor:pointer;color:var(--muted);position:relative}
+.drop:hover,.drop.over{border-color:var(--brass);color:var(--text)}
+.drop b{color:var(--text);font-size:16px}
+.drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.chosen{display:flex;flex-direction:column;gap:12px;margin-top:14px}
+.fname{font:500 13px var(--mono);color:var(--muted);word-break:break-all}
+.prog{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.progtop{display:flex;justify-content:space-between;font-weight:600}
+.pct{font:500 14px var(--mono);color:var(--brass)}
+.bar{height:10px;border-radius:5px;background:var(--bg);overflow:hidden}
+.fill{height:100%;width:0;background:var(--brass);transition:width .2s linear}
+.list{display:flex;flex-direction:column;gap:10px}
+.beat{background:var(--panel2);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.beat.off{opacity:.7}
+.btop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.btitle{font:700 22px/1.1 var(--display);letter-spacing:.02em;cursor:pointer;text-decoration:underline dotted var(--dim);text-underline-offset:5px;word-break:break-word}
+.bmeta{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.status{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;border-radius:999px;padding:5px 9px;flex:none}
+.status.live{background:rgba(155,209,122,.15);color:var(--ok);border:1px solid rgba(155,209,122,.4)}
+.status.off{background:rgba(239,74,74,.12);color:#ffb3b3;border:1px solid rgba(239,74,74,.4)}
+.blink{font:500 13px var(--mono);color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;word-break:break-all;user-select:all}
+.bactions{display:flex;gap:8px;flex-wrap:wrap}
+.danger{color:#ffb3b3}
+.confirm{background:var(--rec);color:#fff;border-color:var(--rec)}
+.empty{color:var(--muted)}
+.row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.row label.f{flex:1 1 220px}
+.modal{position:fixed;inset:0;background:rgba(6,8,12,.72);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:12px}
+.dialog h3{font:800 26px/1 var(--display);margin:0}
+.acts{display:flex;gap:10px;justify-content:flex-end}
+@media (prefers-reduced-motion:reduce){.fill{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div style="display:flex;gap:10px;align-items:center">
+      <h1 class="logo"><span>VERSE<span class="back">BACK</span></span></h1>
+      <span class="pill">Studio</span>
+    </div>
+    <div class="who" id="who" hidden><span>Signed in as <b id="whoName"></b></span><button class="small" id="signOut" type="button">Sign out</button></div>
+  </header>
+
+  <!-- Signed out -->
+  <section class="card" id="authCard" hidden>
+    <h2>Producer sign-in</h2>
+    <p class="lede">Upload your beats and send each one as a link. Artists open it on their phone and record right over your beat. They never get the beat file.</p>
+    <div class="tabs" role="tablist">
+      <button type="button" id="tabIn" class="on" role="tab" aria-selected="true">Sign in</button>
+      <button type="button" id="tabUp" role="tab" aria-selected="false">Create account</button>
+    </div>
+    <form class="form" id="authForm" novalidate>
+      <label class="f" id="nameWrap" hidden>Producer name (shows on your beat links)
+        <input type="text" id="aName" autocomplete="nickname" maxlength="60" placeholder="Su-Preme">
+      </label>
+      <label class="f">Email
+        <input type="email" id="aEmail" autocomplete="email" required>
+      </label>
+      <label class="f">Password
+        <input type="password" id="aPass" autocomplete="current-password" minlength="8" required>
+      </label>
+      <button class="primary" type="submit" id="authBtn">Sign in</button>
+      <div class="msg" id="authMsg" role="status" aria-live="polite"></div>
+      <div><button class="link" type="button" id="forgot">Forgot your password?</button></div>
+    </form>
+  </section>
+
+  <!-- Password reset -->
+  <section class="card" id="resetCard" hidden>
+    <h2>Set a new password</h2>
+    <form class="form" id="resetForm" novalidate>
+      <label class="f">New password
+        <input type="password" id="newPass" autocomplete="new-password" minlength="8" required>
+      </label>
+      <button class="primary" type="submit">Save password</button>
+      <div class="msg" id="resetMsg" role="status" aria-live="polite"></div>
+    </form>
+  </section>
+
+  <!-- Signed in -->
+  <div id="app" hidden style="display:flex;flex-direction:column;gap:14px">
+    <section class="card">
+      <h2>Upload a beat</h2>
+      <label class="drop" id="drop" for="file">
+        <b>Choose a beat</b>
+        <span>MP3 or WAV. WAV files are turned into high-quality MP3s for you.</span>
+        <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.aif,.aiff,.flac">
+      </label>
+      <div class="chosen" id="chosen" hidden>
+        <div class="fname" id="fname"></div>
+        <div class="row">
+          <label class="f">Beat title (artists see this)
+            <input type="text" id="title" maxlength="80">
+          </label>
+          <button class="primary" type="button" id="uploadBtn">Upload beat</button>
+        </div>
+      </div>
+      <div class="prog" id="prog" hidden role="progressbar" aria-valuemin="0" aria-valuemax="100">
+        <div class="progtop"><span id="progLabel">Getting ready…</span><span class="pct" id="progPct">0%</span></div>
+        <div class="bar"><div class="fill" id="progFill"></div></div>
+      </div>
+      <div class="msg" id="upMsg" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2>Your beats</h2>
+      <div class="list" id="list"><div class="empty">Loading your beats…</div></div>
+    </section>
+
+    <section class="card">
+      <h2>Your name</h2>
+      <div class="row">
+        <label class="f">Producer name on your links
+          <input type="text" id="pName" maxlength="60">
+        </label>
+        <button type="button" id="saveName">Save</button>
+      </div>
+      <div class="msg" id="nameMsg" role="status" aria-live="polite"></div>
+    </section>
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h3 id="mTitle">Rename beat</h3>
+    <input type="text" id="mInput" maxlength="80">
+    <div class="acts"><button type="button" id="mCancel">Cancel</button><button type="button" class="primary" id="mOk">Save</button></div>
+  </div>
+</div>
+
+<script>
+(() => {
+const SB_URL = window.VB_SB_URL || 'https://hrvipdfinyjlvdjuktmq.supabase.co';
+const SB_KEY = 'sb_publishable_K0IrrLzK3mLgWwQ8QQ3BZw_CwKqMJiV';
+const $ = s => document.querySelector(s);
+const STUDIO_URL = location.origin + location.pathname;
+
+/* ---------- small Supabase client (auth, database, storage) ---------- */
+const sb = {
+  session: null,
+  load(){ try { this.session = JSON.parse(localStorage.getItem('vb.session') || 'null'); } catch(e){ this.session = null; } },
+  save(s){ this.session = s; try { s ? localStorage.setItem('vb.session', JSON.stringify(s)) : localStorage.removeItem('vb.session'); } catch(e){} },
+  norm(d){ return {access_token:d.access_token, refresh_token:d.refresh_token, expires_at: d.expires_at || Math.floor(Date.now()/1000) + (d.expires_in || 3600), user:d.user}; },
+  get uid(){ return this.session && this.session.user && this.session.user.id; },
+  async raw(path, {method = 'GET', body, auth = true, headers = {}} = {}){
+    const h = {apikey: SB_KEY, ...headers};
+    if (auth && this.session) h.Authorization = 'Bearer ' + this.session.access_token;
+    let payload;
+    if (body !== undefined){ h['Content-Type'] = h['Content-Type'] || 'application/json'; payload = typeof body === 'string' ? body : JSON.stringify(body); }
+    return fetch(SB_URL + path, {method, headers:h, body:payload});
+  },
+  async req(path, opts = {}){
+    if (opts.auth !== false) await this.fresh();
+    let res = await this.raw(path, opts);
+    if (res.status === 401 && opts.auth !== false && this.session){
+      if (await this.refresh()) res = await this.raw(path, opts);
+    }
+    const text = await res.text();
+    let data = null; try { data = text ? JSON.parse(text) : null; } catch(e){ data = text; }
+    if (!res.ok){
+      const m = data && typeof data === 'object' ? (data.msg || data.message || data.error_description || data.error) : null;
+      const err = new Error(m || ('Something went wrong (' + res.status + ').'));
+      err.status = res.status; err.data = data; throw err;
+    }
+    return data;
+  },
+  async fresh(){ const s = this.session; if (s && s.expires_at && Date.now()/1000 > s.expires_at - 90) await this.refresh(); },
+  async refresh(){
+    if (!this.session || !this.session.refresh_token) return false;
+    try {
+      const d = await this.req('/auth/v1/token?grant_type=refresh_token', {method:'POST', auth:false, body:{refresh_token:this.session.refresh_token}});
+      this.save(this.norm(d)); return true;
+    } catch(e){ this.save(null); showAuth('Your session ended. Sign in again.'); return false; }
+  }
+};
+
+/* ---------- views ---------- */
+let mode = 'in';
+function showAuth(msg, ok){
+  $('#authCard').hidden = false; $('#app').hidden = true; $('#who').hidden = true; $('#resetCard').hidden = true;
+  setMsg('#authMsg', msg || '', ok ? 'ok' : (msg ? 'err' : ''));
+}
+function setMode(m){
+  mode = m;
+  $('#tabIn').classList.toggle('on', m === 'in'); $('#tabUp').classList.toggle('on', m === 'up');
+  $('#tabIn').setAttribute('aria-selected', m === 'in'); $('#tabUp').setAttribute('aria-selected', m === 'up');
+  $('#nameWrap').hidden = m !== 'up';
+  $('#authBtn').textContent = m === 'up' ? 'Create account' : 'Sign in';
+  $('#aPass').autocomplete = m === 'up' ? 'new-password' : 'current-password';
+  setMsg('#authMsg', '');
+}
+function setMsg(sel, text, kind){ const el = $(sel); el.textContent = text; el.className = 'msg' + (kind ? ' ' + kind : ''); }
+$('#tabIn').onclick = () => setMode('in');
+$('#tabUp').onclick = () => setMode('up');
+
+$('#authForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const email = $('#aEmail').value.trim(), pass = $('#aPass').value, name = $('#aName').value.trim();
+  if (!email || !email.includes('@')) return setMsg('#authMsg', 'Enter your email address.', 'err');
+  if (pass.length < 8) return setMsg('#authMsg', 'Use a password with at least 8 characters.', 'err');
+  if (mode === 'up' && !name) return setMsg('#authMsg', 'Enter the producer name artists will see.', 'err');
+  $('#authBtn').disabled = true; setMsg('#authMsg', mode === 'up' ? 'Creating your account…' : 'Signing in…');
+  try {
+    if (mode === 'up'){
+      const d = await sb.req('/auth/v1/signup?redirect_to=' + encodeURIComponent(STUDIO_URL), {method:'POST', auth:false, body:{email, password:pass, data:{producer_name:name}}});
+      if (d && d.access_token){ sb.save(sb.norm(d)); await enterApp(); }
+      else { setMode('in'); setMsg('#authMsg', 'Almost done. Check your email for a link to confirm your account, then sign in here.', 'ok'); }
+    } else {
+      const d = await sb.req('/auth/v1/token?grant_type=password', {method:'POST', auth:false, body:{email, password:pass}});
+      sb.save(sb.norm(d)); await enterApp();
+    }
+  } catch(err){
+    const m = /invalid login/i.test(err.message) ? 'That email and password don’t match. Try again, or reset your password.'
+      : /not confirmed/i.test(err.message) ? 'Confirm your email first. Check your inbox for the link we sent.'
+      : /already registered|already exists/i.test(err.message) ? 'That email already has an account. Sign in instead.'
+      : err.message;
+    setMsg('#authMsg', m, 'err');
+  }
+  $('#authBtn').disabled = false;
+});
+
+$('#forgot').onclick = async () => {
+  const email = $('#aEmail').value.trim();
+  if (!email || !email.includes('@')) return setMsg('#authMsg', 'Type your email above first, then tap “Forgot your password?” again.', 'err');
+  try {
+    await sb.req('/auth/v1/recover?redirect_to=' + encodeURIComponent(STUDIO_URL), {method:'POST', auth:false, body:{email}});
+    setMsg('#authMsg', 'If that email has an account, a reset link is on its way.', 'ok');
+  } catch(err){ setMsg('#authMsg', err.message, 'err'); }
+};
+
+$('#resetForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const p = $('#newPass').value;
+  if (p.length < 8) return setMsg('#resetMsg', 'Use at least 8 characters.', 'err');
+  try {
+    await sb.req('/auth/v1/user', {method:'PUT', body:{password:p}});
+    setMsg('#resetMsg', 'Password saved.', 'ok');
+    setTimeout(enterApp, 700);
+  } catch(err){ setMsg('#resetMsg', err.message, 'err'); }
+});
+
+$('#signOut').onclick = async () => {
+  try { await sb.req('/auth/v1/logout', {method:'POST'}); } catch(e){}
+  sb.save(null); setMode('in'); $('#aPass').value = ''; showAuth('You’re signed out.', true);
+};
+
+/* ---------- signed in ---------- */
+let profile = {producer_name:''}, beats = [];
+async function enterApp(){
+  $('#authCard').hidden = true; $('#resetCard').hidden = true; $('#app').hidden = false; $('#who').hidden = false;
+  try {
+    const rows = await sb.req('/rest/v1/profiles?select=producer_name&id=eq.' + sb.uid);
+    if (rows && rows.length) profile = rows[0];
+    else {
+      const name = (sb.session.user.user_metadata || {}).producer_name || '';
+      await sb.req('/rest/v1/profiles', {method:'POST', body:{id:sb.uid, producer_name:name}, headers:{Prefer:'return=minimal'}});
+      profile = {producer_name:name};
+    }
+  } catch(err){ if (err.status === 401) return; }
+  $('#whoName').textContent = profile.producer_name || (sb.session.user.email || '');
+  $('#pName').value = profile.producer_name || '';
+  await loadBeats();
+}
+async function loadBeats(){
+  try { beats = await sb.req('/rest/v1/beats?select=*&order=created_at.desc') || []; renderBeats(); }
+  catch(err){ $('#list').innerHTML = ''; const d = document.createElement('div'); d.className = 'msg err'; d.textContent = 'Couldn’t load your beats: ' + err.message; $('#list').append(d); }
+}
+
+$('#saveName').onclick = async () => {
+  const n = $('#pName').value.trim();
+  if (!n) return setMsg('#nameMsg', 'Enter a name.', 'err');
+  try {
+    await sb.req('/rest/v1/profiles?id=eq.' + sb.uid, {method:'PATCH', body:{producer_name:n}, headers:{Prefer:'return=minimal'}});
+    profile.producer_name = n; $('#whoName').textContent = n;
+    setMsg('#nameMsg', 'Saved. Your links now say “Produced by ' + n + '”.', 'ok');
+  } catch(err){ setMsg('#nameMsg', err.message, 'err'); }
+};
+
+/* ---------- upload ---------- */
+const AUDIO_RE = /\.(mp3|wav|m4a|aac|aif|aiff|flac|ogg)$/i;
+let picked = null;
+const prettify = f => f.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+function pick(file){
+  if (!file) return;
+  if (!(file.type.startsWith('audio/') || AUDIO_RE.test(file.name))) return setMsg('#upMsg', 'That isn’t an audio file. Choose an MP3 or WAV.', 'err');
+  if (file.size > 400*1024*1024) return setMsg('#upMsg', 'That file is too big. Keep beats under 400 MB.', 'err');
+  picked = file;
+  $('#chosen').hidden = false;
+  $('#fname').textContent = file.name + ' · ' + (file.size/1048576).toFixed(1) + ' MB';
+  $('#title').value = prettify(file.name);
+  setMsg('#upMsg', '');
+}
+$('#file').addEventListener('change', e => { pick(e.target.files[0]); e.target.value = ''; });
+const drop = $('#drop');
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => pick(e.dataTransfer.files[0]));
+
+function prog(label, frac){
+  $('#prog').hidden = false;
+  if (label) $('#progLabel').textContent = label;
+  const p = Math.round(Math.max(0, Math.min(1, frac))*100);
+  $('#progPct').textContent = p + '%'; $('#progFill').style.width = p + '%'; $('#prog').setAttribute('aria-valuenow', p);
+}
+const frame = () => new Promise(r => setTimeout(r, 0));
+function decodeAudio(buf){
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const ctx = new OAC(2, 1, 44100);
+  return new Promise((res, rej) => { const p = ctx.decodeAudioData(buf, res, rej); if (p && p.then) p.then(res, rej); });
+}
+async function toMp3(ab, onProg){
+  if (!window.lamejs) throw new Error('The MP3 converter didn’t load. Check your connection and refresh.');
+  const sr = ab.sampleRate, L = ab.getChannelData(0), R = ab.numberOfChannels > 1 ? ab.getChannelData(1) : L;
+  const enc = new lamejs.Mp3Encoder(2, sr, 256);
+  const out = [], block = 1152;
+  const conv = a => { const r = new Int16Array(a.length); for (let i = 0; i < a.length; i++){ const s = a[i] < -1 ? -1 : a[i] > 1 ? 1 : a[i]; r[i] = s < 0 ? s*0x8000 : s*0x7FFF; } return r; };
+  for (let i = 0; i < L.length; i += block){
+    const m = enc.encodeBuffer(conv(L.subarray(i, i + block)), conv(R.subarray(i, i + block)));
+    if (m.length) out.push(new Uint8Array(m));
+    if (i % (block*200) === 0){ onProg(i/L.length); await frame(); }
+  }
+  const end = enc.flush(); if (end.length) out.push(new Uint8Array(end));
+  return new Blob(out, {type:'audio/mpeg'});
+}
+function putObject(path, blob, onProg){
+  return new Promise((res, rej) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', SB_URL + '/storage/v1/object/beats/' + path);
+    x.setRequestHeader('apikey', SB_KEY);
+    x.setRequestHeader('Authorization', 'Bearer ' + sb.session.access_token);
+    x.setRequestHeader('Content-Type', 'audio/mpeg');
+    x.setRequestHeader('x-upsert', 'false');
+    x.upload.onprogress = e => { if (e.lengthComputable) onProg(e.loaded/e.total); };
+    x.onload = () => {
+      if (x.status >= 200 && x.status < 300) return res();
+      let m = 'Upload failed (' + x.status + ').'; try { const d = JSON.parse(x.responseText); m = d.message || d.error || m; } catch(e){}
+      rej(new Error(m));
+    };
+    x.onerror = () => rej(new Error('Upload failed. Check your connection and try again.'));
+    x.send(blob);
+  });
+}
+const CODE_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
+function makeCode(){ const a = new Uint32Array(7); crypto.getRandomValues(a); return Array.from(a, n => CODE_CHARS[n % CODE_CHARS.length]).join(''); }
+function uuid(){ if (crypto.randomUUID) return crypto.randomUUID(); const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128; const h = [...b].map(x => x.toString(16).padStart(2, '0')).join(''); return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20); }
+
+let uploading = false;
+$('#uploadBtn').onclick = async () => {
+  if (!picked || uploading) return;
+  const title = $('#title').value.trim() || prettify(picked.name);
+  uploading = true; $('#uploadBtn').disabled = true; setMsg('#upMsg', '');
+  const id = uuid(), path = sb.uid + '/' + id + '.mp3';
+  let stored = false;
+  try {
+    await sb.fresh();
+    prog('Reading the beat…', 0); await frame();
+    const bytes = await picked.arrayBuffer();
+    const audio = await decodeAudio(bytes.slice(0));
+    const isMp3 = /mpeg|mp3/.test(picked.type) || /\.mp3$/i.test(picked.name);
+    let blob;
+    if (isMp3 && picked.size <= 25*1024*1024){ blob = new Blob([bytes], {type:'audio/mpeg'}); prog('Reading the beat…', 1); }
+    else { prog('Turning it into an MP3…', 0); blob = await toMp3(audio, p => prog(null, p)); }
+    prog('Uploading…', 0);
+    await putObject(path, blob, p => prog(null, p));
+    stored = true;
+    let row = null;
+    for (let tries = 0; tries < 4 && !row; tries++){
+      try {
+        const r = await sb.req('/rest/v1/beats', {method:'POST', headers:{Prefer:'return=representation'},
+          body:{id, code:makeCode(), title, file_path:path, size_bytes:blob.size, duration_sec:Math.round(audio.duration*10)/10}});
+        row = r[0];
+      } catch(err){ if (err.status !== 409) throw err; }
+    }
+    if (!row) throw new Error('Couldn’t create a link. Try again.');
+    prog('Done', 1);
+    beats.unshift(row); renderBeats();
+    picked = null; $('#chosen').hidden = true;
+    setTimeout(() => { $('#prog').hidden = true; }, 600);
+    setMsg('#upMsg', '“' + title + '” is up. Copy its link below and send it to an artist.', 'ok');
+  } catch(err){
+    if (stored){ try { await sb.req('/storage/v1/object/beats/' + path, {method:'DELETE'}); } catch(e){} }
+    $('#prog').hidden = true;
+    const m = /decode|Unable to decode|EncodingError/i.test(String(err && (err.name + err.message))) ? 'Couldn’t read that audio file. Try exporting it again as MP3 or WAV.' : err.message;
+    setMsg('#upMsg', m, 'err');
+  }
+  uploading = false; $('#uploadBtn').disabled = false;
+};
+
+/* ---------- beat list ---------- */
+const linkFor = b => location.origin + '/b/' + b.code;
+const fmtDur = s => { s = Math.round(s || 0); return Math.floor(s/60) + ':' + String(s % 60).padStart(2, '0'); };
+const fmtDate = d => new Date(d).toLocaleDateString(undefined, {month:'short', day:'numeric'});
+function flash(btn, text){ const old = btn.dataset.l || btn.textContent; btn.dataset.l = old; btn.textContent = text; setTimeout(() => { btn.textContent = old; }, 1800); }
+function renderBeats(){
+  const box = $('#list'); box.innerHTML = '';
+  if (!beats.length){ const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'No beats yet. Upload one above, then send its link to an artist.'; box.append(e); return; }
+  for (const b of beats){
+    const el = document.createElement('div'); el.className = 'beat' + (b.active ? '' : ' off');
+    el.innerHTML = '<div class="btop"><div><div class="btitle" role="button" tabindex="0" title="Tap to rename"></div><div class="bmeta"></div></div><span class="status"></span></div><div class="blink"></div><div class="bactions"></div>';
+    const t = el.querySelector('.btitle'); t.textContent = b.title;
+    t.onclick = t.onkeydown = async e => { if (e.type === 'keydown' && e.key !== 'Enter') return; const n = await askText('Rename beat', b.title); if (n && n !== b.title){ try { await sb.req('/rest/v1/beats?id=eq.' + b.id, {method:'PATCH', body:{title:n}, headers:{Prefer:'return=minimal'}}); b.title = n; renderBeats(); } catch(err){ alert(err.message); } } };
+    el.querySelector('.bmeta').textContent = fmtDur(b.duration_sec) + ' · added ' + fmtDate(b.created_at) + (b.size_bytes ? ' · ' + (b.size_bytes/1048576).toFixed(1) + ' MB' : '');
+    const st = el.querySelector('.status'); st.className = 'status ' + (b.active ? 'live' : 'off'); st.textContent = b.active ? 'Link on' : 'Link off';
+    el.querySelector('.blink').textContent = linkFor(b);
+    const acts = el.querySelector('.bactions');
+    const mk = (label, cls, fn) => { const x = document.createElement('button'); x.type = 'button'; x.className = 'small ' + (cls || ''); x.textContent = label; x.onclick = () => fn(x); acts.append(x); return x; };
+    mk('Copy link', 'primary', btn => { const u = linkFor(b); try { navigator.clipboard.writeText(u).then(() => flash(btn, 'Copied'), () => { selectLink(el); flash(btn, 'Select and copy'); }); } catch(e){ selectLink(el); } });
+    if (navigator.share) mk('Share', '', async () => { try { await navigator.share({title:b.title, text:'Here’s the beat. Open it, put on headphones and record your verse:', url:linkFor(b)}); } catch(e){} });
+    const test = document.createElement('a'); test.className = 'btn small'; test.href = linkFor(b); test.target = '_blank'; test.rel = 'noopener'; test.textContent = 'Test'; acts.append(test);
+    mk(b.active ? 'Turn link off' : 'Turn link on', '', async btn => {
+      btn.disabled = true;
+      try { await sb.req('/rest/v1/beats?id=eq.' + b.id, {method:'PATCH', body:{active:!b.active}, headers:{Prefer:'return=minimal'}}); b.active = !b.active; renderBeats(); }
+      catch(err){ btn.disabled = false; alert(err.message); }
+    });
+    let armed = null;
+    mk('Delete', 'danger', async btn => {
+      if (!armed){ btn.textContent = 'Sure? Tap again'; btn.classList.add('confirm'); armed = setTimeout(() => { armed = null; btn.textContent = 'Delete'; btn.classList.remove('confirm'); }, 3000); return; }
+      clearTimeout(armed); btn.disabled = true;
+      try {
+        await sb.req('/rest/v1/beats?id=eq.' + b.id, {method:'DELETE'});
+        try { await sb.req('/storage/v1/object/beats/' + b.file_path, {method:'DELETE'}); } catch(e){}
+        beats = beats.filter(x => x !== b); renderBeats();
+      } catch(err){ btn.disabled = false; alert(err.message); }
+    });
+    box.append(el);
+  }
+}
+function selectLink(el){ const r = document.createRange(); r.selectNodeContents(el.querySelector('.blink')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+function askText(title, value){
+  return new Promise(res => {
+    $('#mTitle').textContent = title; $('#mInput').value = value; $('#modal').hidden = false;
+    setTimeout(() => { $('#mInput').focus(); $('#mInput').select(); }, 30);
+    const done = v => { $('#modal').hidden = true; $('#mOk').onclick = $('#mCancel').onclick = $('#mInput').onkeydown = null; res(v); };
+    $('#mOk').onclick = () => done($('#mInput').value.trim());
+    $('#mCancel').onclick = () => done(null);
+    $('#mInput').onkeydown = e => { if (e.key === 'Enter') done($('#mInput').value.trim()); if (e.key === 'Escape') done(null); };
+  });
+}
+
+/* ---------- start ---------- */
+async function start(){
+  sb.load();
+  // Links from emails (confirm account, reset password) land here with the session in the address
+  const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (h.get('error_description')){ history.replaceState(null, '', location.pathname); showAuth(h.get('error_description').replace(/\+/g, ' ')); return; }
+  if (h.get('access_token')){
+    const s = {access_token:h.get('access_token'), refresh_token:h.get('refresh_token'), expires_at: +h.get('expires_at') || Math.floor(Date.now()/1000) + (+h.get('expires_in') || 3600), user:null};
+    sb.save(s);
+    try { s.user = await sb.req('/auth/v1/user'); sb.save(s); } catch(e){}
+    history.replaceState(null, '', location.pathname);
+    if (h.get('type') === 'recovery'){ $('#authCard').hidden = true; $('#resetCard').hidden = false; return; }
+  }
+  if (sb.session && sb.session.user){
+    await sb.fresh();
+    if (sb.session) return enterApp();
+  }
+  showAuth();
+}
+start();
+window.__studio = {sb, get beats(){ return beats; }};
+})();
+</script>
+</body>
+</html>
