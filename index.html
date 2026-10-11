@@ -166,6 +166,17 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
 .readyname{font-weight:600;word-break:break-word}
 .readymeta{font:500 13px var(--mono);color:var(--muted)}
 .ready .hint{margin:0}
+.sendbox{display:flex;flex-direction:column;gap:10px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+.sendbox h2{margin:0}
+.sendbtn{width:100%;min-height:58px;font-size:18px}
+.sendbtn svg{width:20px;height:20px}
+.sendbox .hint{margin:0}
+.sent{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--v3);border-radius:10px;background:var(--panel2)}
+.sentt{font-weight:600}
+.sentm{font-size:13px;color:var(--muted)}
+.mlabel{display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:14px;color:var(--text);margin-top:10px}
+.mlabel .fld{font-weight:400}
+.merr{color:#ffb3b3;font-size:14px;min-height:1.2em;margin:8px 0 0}
 @media (prefers-reduced-motion:reduce){.progfill{transition:none}}
 .saved{font-size:12px;color:var(--v3);min-height:1.2em;margin-top:2px}
 .saved:not(:empty)::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:6px;vertical-align:1px}
@@ -318,6 +329,18 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
   </section>
 
   <section class="card export" aria-label="Download">
+    <div class="sendbox" id="sendBox" hidden>
+      <h2>Send it back</h2>
+      <button class="btn primary sendbtn" id="sendBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>
+        <span id="sendLabel">Send to producer</span>
+      </button>
+      <p class="hint">Sends your full song plus each take, lined up to the beat, straight to <span id="sendWho">the producer</span>. No email needed.</p>
+      <div class="sent" id="sentCard" hidden>
+        <span class="check-dot" aria-hidden="true"></span>
+        <div><div class="sentt" id="sentTitle">Sent</div><div class="sentm" id="sentMeta"></div></div>
+      </div>
+    </div>
     <h2>Download</h2>
     <div class="btns">
       <button class="btn primary" id="mp3Btn" type="button" disabled>Song (MP3)</button>
@@ -1184,6 +1207,105 @@ async function doExport(kind){
   S.exporting = false; updateUI();
 }
 $('#saveBtn').onclick = () => { if (ready) saveBlob(ready.blob, ready.name); };
+
+/* ---------- Send to producer ---------- */
+function newId(){
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+  const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  return h.slice(0,8) + '-' + h.slice(8,12) + '-' + h.slice(12,16) + '-' + h.slice(16,20) + '-' + h.slice(20);
+}
+const slugify = s => (s || 'file').toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'file';
+// One take as a mono buffer that starts at 0:00 of the beat, with the sync fix applied, so it lines up in any DAW
+function stemBuffer(t){
+  const sr = S.ctx.sampleRate;
+  const off = Math.round(t.start - S.comp*sr);
+  const src = off >= 0 ? t.data : t.data.subarray(-off);
+  const lead = Math.max(0, off);
+  const buf = S.ctx.createBuffer(1, Math.max(1, lead + src.length), sr);
+  buf.getChannelData(0).set(src, lead);
+  return buf;
+}
+function putVocal(path, blob, onProg){
+  return new Promise((res, rej) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', SB_URL + '/storage/v1/object/vocals/' + path.split('/').map(encodeURIComponent).join('/'));
+    x.setRequestHeader('apikey', SB_KEY);
+    x.setRequestHeader('Content-Type', blob.type || 'audio/wav');
+    x.setRequestHeader('x-upsert', 'false');
+    x.upload.onprogress = e => { if (e.lengthComputable) onProg(e.loaded/e.total); };
+    x.onload = () => {
+      if (x.status >= 200 && x.status < 300) return res();
+      let m = 'Upload failed (' + x.status + ')'; try { const d = JSON.parse(x.responseText); m = d.message || d.error || m; } catch(e){}
+      const err = new Error(m); err.status = x.status; rej(err);
+    };
+    x.onerror = () => rej(new Error('network'));
+    x.send(blob);
+  });
+}
+async function askSend(err){
+  const who = S.cloud.producer;
+  const p = ask({title:'Send to ' + who,
+    body:'<p>Your full song and each take go straight to ' + esc(who) + '.</p>'
+      + '<label class="mlabel">Your artist name<input class="fld" id="sName" maxlength="60" autocomplete="nickname" value="' + esc(store.get('artistName') || '') + '"></label>'
+      + '<label class="mlabel">Note for ' + esc(who) + ' (optional)<input class="fld" id="sNote" maxlength="300" placeholder="Hook is rough, I’ll redo it"></label>'
+      + '<p class="merr" id="sErr">' + esc(err || '') + '</p>',
+    ok:'Send', cancel:'Cancel'});
+  const n = $('#sName'), nt = $('#sNote');
+  if (n){ setTimeout(() => (n.value ? nt : n).focus(), 40); [n, nt].forEach(f => f.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); $('#mOk').click(); } }); }
+  const ans = await p;
+  if (ans !== true) return null;
+  return {name: ($('#sName').value || '').trim(), note: ($('#sNote').value || '').trim()};
+}
+async function sendToProducer(){
+  if (!S.cloud || S.exporting || S.rec) return;
+  if (!S.tracks.length){ setStatus('Record something first, then send it.', true); return; }
+  if (S.playing) stopAll();
+  let info = await askSend();
+  while (info && !info.name) info = await askSend('Add your artist name so ' + S.cloud.producer + ' knows who sent it.');
+  if (!info) return;
+  store.set('artistName', info.name);
+  S.exporting = true; updateUI();
+  $('#sentCard').hidden = true; $('#ready').hidden = true; ready = null;
+  const id = newId(), base = S.cloud.code + '/' + id + '/';
+  const artist = safeName(info.name), title = safeName(S.cloud.title);
+  try {
+    showProg('Mixing your song…', 0); await frame();
+    const mix = await renderMix(true, 2, p => showProg(null, p*0.25));
+    let mixBlob, mixName;
+    if (window.lamejs){ showProg('Making the MP3…', 0.25); mixBlob = await toMp3(mix, p => showProg(null, 0.25 + p*0.25)); mixName = artist + ' - ' + title + ' (full song).mp3'; }
+    else { mixBlob = toWav(mix); mixName = artist + ' - ' + title + ' (full song).wav'; }
+    const out = [{blob:mixBlob, name:mixName, kind:'mix'}];
+    showProg('Preparing your takes…', 0.5); await frame();
+    for (const t of S.tracks){
+      out.push({blob: toWav(stemBuffer(t)), name: artist + ' - ' + safeName(t.name) + (t.muted ? ' (muted)' : '') + '.wav', kind:'take'});
+      await frame();
+    }
+    const total = out.reduce((a, f) => a + f.blob.size, 0);
+    let sent = 0; const files = [];
+    for (let i = 0; i < out.length; i++){
+      const f = out[i], path = base + (i + 1) + '-' + slugify(f.name);
+      showProg('Sending to ' + S.cloud.producer + '…', 0.52 + 0.45*sent/total);
+      await putVocal(path, f.blob, p => showProg(null, 0.52 + 0.45*(sent + p*f.blob.size)/total));
+      sent += f.blob.size;
+      files.push({name:f.name, path, kind:f.kind, size:f.blob.size});
+    }
+    await sbAnon('/rest/v1/rpc/submit_vocals', {p_code:S.cloud.code, p_id:id, p_artist:info.name, p_note:info.note, p_files:files, p_duration:Math.round(mix.duration*10)/10});
+    showProg('Sent', 1); await new Promise(r => setTimeout(r, 300));
+    $('#prog').hidden = true;
+    $('#sentTitle').textContent = 'Sent to ' + S.cloud.producer;
+    $('#sentMeta').textContent = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) + ' · full song + ' + (out.length - 1) + (out.length === 2 ? ' take' : ' takes') + '. Keep working and send again anytime.';
+    $('#sentCard').hidden = false;
+    setStatus('Sent to ' + S.cloud.producer + '. They got your full song and every take.');
+  } catch (e){
+    $('#prog').hidden = true;
+    const off = /link is off|row-level security|violates/i.test(e.message || '');
+    setStatus(off ? 'This beat link is off, so it couldn’t send. Ask ' + S.cloud.producer + ' to turn it back on. Your song is still saved here.'
+      : 'Sending didn’t finish. Check your connection and try again. Your song is still saved here.', true);
+  }
+  S.exporting = false; updateUI();
+}
+$('#sendBtn').onclick = sendToProducer;
 $('#shareBtn').onclick = async () => {
   if (!ready) return;
   try { await navigator.share({files:[new File([ready.blob], ready.name, {type:ready.blob.type})], title:ready.name}); }
@@ -1230,6 +1352,7 @@ function updateUI(){
   $('#clearBtn').disabled = !has || rec;
   $('#demoBtn').disabled = rec; $('#beatFile').disabled = rec;
   ['#mp3Btn','#wavBtn','#vocBtn'].forEach(s => $(s).disabled = !has || rec || !!S.exporting);
+  $('#sendBtn').disabled = !has || rec || !!S.exporting;
   $('#light').classList.toggle('on', rec);
   // bottom dock
   const showDock = hasBeat && !document.body.classList.contains('making');
@@ -1617,6 +1740,10 @@ async function startCloud(code){
     }
     document.title = b.title + ' · VerseBack';
     if (b.producer_name){ $('#beatBy').textContent = 'Produced by ' + b.producer_name; $('#beatBy').hidden = false; }
+    S.cloud = {code, title: b.title, producer: b.producer_name || 'the producer'};
+    $('#sendLabel').textContent = 'Send to ' + (b.producer_name || 'producer');
+    $('#sendWho').textContent = b.producer_name || 'the producer';
+    $('#sendBox').hidden = false;
     $('#beatName').textContent = 'Loading ' + b.title + '…';
     const signed = await sbAnon('/storage/v1/object/sign/beats/' + b.file_path.split('/').map(encodeURIComponent).join('/'), {expiresIn: 3600});
     const rel = signed && (signed.signedURL || signed.signedUrl);
