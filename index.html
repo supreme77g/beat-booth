@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Beat Booth</title>
+<title>VerseBack</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -100,6 +100,7 @@ summary{cursor:pointer;font-weight:600}
 .dialog p{color:var(--muted);margin:0 0 10px}
 .dialog .acts{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px}
 .drop{outline:3px dashed var(--brass);outline-offset:-8px}
+.logoback{color:var(--brass)}
 .hot{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--rec);border-radius:4px;padding:4px 6px}
 .status.warn{color:#ffb3b3}
 .artist #loadBtn,.artist #demoBtn{display:none}
@@ -208,7 +209,7 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
     <a id="inappChrome" class="btn primary" hidden>Open in Chrome</a>
   </div>
   <header>
-    <h1 class="logo"><span class="light" id="light" aria-hidden="true"></span>BEAT BOOTH</h1>
+    <h1 class="logo"><span class="light" id="light" aria-hidden="true"></span><span>VERSE<span class="logoback">BACK</span></span></h1>
     <p class="tag" id="tag">Load a beat, put on headphones, hit record. Lay down a whole song right here.</p>
   </header>
 
@@ -306,7 +307,7 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
         <input type="range" id="comp" min="-100" max="500" step="1" value="0" aria-label="Sync fix in milliseconds">
         <div class="pct" id="compVal">0 ms</div>
       </div>
-      <p class="hint">Play a take and slide until your vocals lock with the beat. Slide right if they sound late, left if they rush. It fixes every take at once, and Booth remembers it on this device.</p>
+      <p class="hint">Play a take and slide until your vocals lock with the beat. Slide right if they sound late, left if they rush. It fixes every take at once, and VerseBack remembers it on this device.</p>
     </div>
     <p class="hint"><b>Record vocals</b> lays down your main vocal from the playhead, and records over it if you go back to fix a part. <b>Overdub</b> adds a new layer on top for doubles, ad-libs and hooks. Tap the waveform to pick where to start.</p>
   </section>
@@ -848,7 +849,7 @@ async function ensureMic(){
     const framed = window.top !== window.self;
     setStatus(e && e.name === 'NotAllowedError'
       ? (framed
-        ? "The mic is blocked in this preview. Open Beat Booth from its web link in Safari or Chrome to record."
+        ? "The mic is blocked in this preview. Open VerseBack from its web link in Safari or Chrome to record."
         : 'Mic access was blocked. Allow the microphone for this page in your browser settings, then try again.')
       : 'No microphone found. Plug one in or check your headset, then try again.');
     return false;
@@ -909,7 +910,7 @@ async function record(mode){
       if (ans === 'alt') setPhones(bt ? 'wired' : 'bt', true);
       S.headphonesOk = true;
     } else {
-      const ans = await ask({title:'Headphones on?', body:'<p>Put on headphones before you record, so the mic only hears your voice and not the beat.</p><p>What are you listening on? Bluetooth adds a delay, and Booth will line your vocals up for it.</p>', ok:'Wired', alt:'Bluetooth', cancel:'Not yet'});
+      const ans = await ask({title:'Headphones on?', body:'<p>Put on headphones before you record, so the mic only hears your voice and not the beat.</p><p>What are you listening on? Bluetooth adds a delay, and VerseBack will line your vocals up for it.</p>', ok:'Wired', alt:'Bluetooth', cancel:'Not yet'});
       if (!ans) return;
       S.headphonesOk = true;
       setPhones(ans === 'alt' ? 'bt' : 'wired', ans === 'alt');
@@ -1145,7 +1146,7 @@ async function doExport(kind){
   if (S.playing || S.rec) stopAll();
   S.exporting = true; updateUI();
   $('#ready').hidden = true; ready = null;
-  const base = safeName(S.beatName === 'Demo beat' ? 'Booth song' : S.beatName);
+  const base = safeName(S.beatName === 'Demo beat' ? 'VerseBack song' : S.beatName);
   try {
     if (kind === 'mp3' && !window.lamejs){ kind = 'wav'; setStatus('MP3 maker could not load, so this one is a WAV.'); }
     const mixShare = kind === 'mp3' ? 0.45 : 0.85;
