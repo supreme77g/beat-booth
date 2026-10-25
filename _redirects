@@ -1,4 +1,11 @@
 # Beat links: verseback.com/b/CODE opens the booth with that beat
 /b/*      /index.html    200
-# Producer studio
+# Artist songs: verseback.com/s/SONG-ID opens the booth with that song
+/s/*      /index.html    200
+# Studio (producer + artist)
 /studio   /studio.html   200
+# Pricing and legal pages
+/pricing  /pricing.html  200
+/terms    /terms.html    200
+/privacy  /privacy.html  200
+/refunds  /refunds.html  200

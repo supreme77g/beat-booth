@@ -100,6 +100,31 @@ button:focus-visible,.btn:focus-visible,input:focus-visible{outline:2px solid va
 .dialog h3{font:800 26px/1 var(--display);margin:0}
 .acts{display:flex;gap:10px;justify-content:flex-end}
 @media (prefers-reduced-motion:reduce){.fill{transition:none}}
+.plancard{display:flex;flex-direction:column;gap:10px}
+.planrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.planname{font:800 26px/1 var(--display);letter-spacing:.03em;text-transform:uppercase;display:flex;align-items:center;gap:10px}
+.planname .pill{font-size:10px}
+.usage{display:flex;gap:8px;flex-wrap:wrap}
+.use{font:500 12px var(--mono);color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 10px}
+.use.full{color:#ffd59a;border-color:#7a5a24}
+.proline{margin:0;color:var(--muted);font-size:14px}
+#planMsg:empty{display:none}
+.planbtns{display:flex;gap:8px;flex-wrap:wrap}
+.planbtns small{font-weight:500;opacity:.8}
+.sidetabs{display:flex;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:5px}
+.sidetabs button{flex:1;border:0;background:transparent;font-size:16px;min-height:44px}
+.sidetabs button.on{background:var(--brass);color:var(--brass-ink)}
+.side{display:flex;flex-direction:column;gap:14px}
+.lic{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--text);cursor:pointer}
+.lic input{accent-color:var(--brass);width:20px;height:20px;flex:none;margin-top:1px}
+.song .btitle{font-size:22px}
+.dialog p{margin:0;color:var(--muted)}
+.dialog .stack{display:flex;flex-direction:column;gap:8px}
+.dialog .stack button{width:100%}
+.foot{border-top:1px solid var(--line);margin-top:8px;padding-top:14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--dim);font-size:13px}
+.foot a{color:var(--muted);text-decoration:none;margin-right:14px;line-height:2}
+.foot a:hover{color:var(--text)}
+
 </style>
 </head>
 <body>
@@ -114,14 +139,15 @@ button:focus-visible,.btn:focus-visible,input:focus-visible{outline:2px solid va
 
   <!-- Signed out -->
   <section class="card" id="authCard" hidden>
-    <h2>Producer sign-in</h2>
-    <p class="lede">Upload your beats and send each one as a link. Artists open it on their phone and record right over your beat. They never get the beat file.</p>
+    <h2>Sign in to your Studio</h2>
+    <p class="lede"><b>Producers:</b> upload beats and send each one as a link. Artists record right over your beat and send it back, without ever getting the beat file. <b>Artists:</b> add your own or licensed beats and record and save songs in your own studio.</p>
+    <div class="msg ok" id="proHint" hidden>Create a free account or sign in, then you can go Pro.</div>
     <div class="tabs" role="tablist">
       <button type="button" id="tabIn" class="on" role="tab" aria-selected="true">Sign in</button>
       <button type="button" id="tabUp" role="tab" aria-selected="false">Create account</button>
     </div>
     <form class="form" id="authForm" novalidate>
-      <label class="f" id="nameWrap" hidden>Producer name (shows on your beat links)
+      <label class="f" id="nameWrap" hidden>Your producer or artist name
         <input type="text" id="aName" autocomplete="nickname" maxlength="60" placeholder="Su-Preme">
       </label>
       <label class="f">Email
@@ -150,6 +176,21 @@ button:focus-visible,.btn:focus-visible,input:focus-visible{outline:2px solid va
 
   <!-- Signed in -->
   <div id="app" hidden style="display:flex;flex-direction:column;gap:14px">
+    <section class="card plancard" id="planCard">
+      <div class="planrow">
+        <div class="planname" id="planName">Free plan</div>
+        <div class="planbtns" id="planBtns"></div>
+      </div>
+      <div class="usage" id="usage"></div>
+      <div class="msg" id="planMsg" role="status" aria-live="polite"></div>
+    </section>
+
+    <div class="sidetabs" role="tablist" aria-label="Studio side">
+      <button type="button" id="sideProd" class="on" role="tab" aria-selected="true">Producer</button>
+      <button type="button" id="sideArt" role="tab" aria-selected="false">Artist</button>
+    </div>
+
+    <div class="side" id="prodSide">
     <section class="card" id="inboxCard">
       <div class="inhead"><h2>Inbox <span class="count" id="newCount" hidden></span></h2><button class="small" type="button" id="refreshInbox">Refresh</button></div>
       <div class="list" id="inbox"><div class="empty">Loading your inbox…</div></div>
@@ -193,6 +234,58 @@ button:focus-visible,.btn:focus-visible,input:focus-visible{outline:2px solid va
       </div>
       <div class="msg" id="nameMsg" role="status" aria-live="polite"></div>
     </section>
+    </div>
+
+    <div class="side" id="artSide" hidden>
+      <section class="card">
+        <h2>My songs</h2>
+        <div class="list" id="songs"><div class="empty">Loading your songs…</div></div>
+      </section>
+
+      <section class="card">
+        <h2>Add a beat</h2>
+        <p class="lede">Your own beats, or beats you leased or bought. Only you can see them.</p>
+        <label class="drop" id="adrop" for="afile">
+          <b>Choose a beat</b>
+          <span>MP3 or WAV. WAV files are turned into high-quality MP3s for you.</span>
+          <input type="file" id="afile" accept="audio/*,.mp3,.wav,.m4a,.aif,.aiff,.flac">
+        </label>
+        <div class="chosen" id="achosen" hidden>
+          <div class="fname" id="afname"></div>
+          <label class="f">Beat title
+            <input type="text" id="atitle" maxlength="80">
+          </label>
+          <label class="lic"><input type="checkbox" id="alic"> I made this beat, or I have a license to use it.</label>
+          <div><button class="primary" type="button" id="aUploadBtn">Add beat</button></div>
+        </div>
+        <div class="prog" id="aprog" hidden role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div class="progtop"><span id="aprogLabel">Getting ready…</span><span class="pct" id="aprogPct">0%</span></div>
+          <div class="bar"><div class="fill" id="aprogFill"></div></div>
+        </div>
+        <div class="msg" id="aupMsg" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="card">
+        <h2>My beats</h2>
+        <div class="list" id="abeats"><div class="empty">Loading your beats…</div></div>
+      </section>
+    </div>
+  </div>
+  <footer class="foot">
+    <div><a href="/pricing">Pricing</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a><a href="mailto:support@verseback.com">Contact</a></div>
+    <div>© 2026 ASW Studio. VerseBack™</div>
+  </footer>
+</div>
+
+<div class="modal" id="upModal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="uTitle">
+    <h3 id="uTitle">Go Pro</h3>
+    <p id="uBody">Unlimited beat links, beats and songs. One plan covers your Producer and Artist studio.</p>
+    <div class="stack">
+      <button type="button" class="primary" id="uMonthly">$9.99 a month</button>
+      <button type="button" id="uYearly">$79 a year <small>(save 34%)</small></button>
+      <button type="button" class="link" id="uCancel">Not now</button>
+    </div>
   </div>
 </div>
 
@@ -210,6 +303,8 @@ const SB_URL = window.VB_SB_URL || 'https://hrvipdfinyjlvdjuktmq.supabase.co';
 const SB_KEY = 'sb_publishable_K0IrrLzK3mLgWwQ8QQ3BZw_CwKqMJiV';
 const $ = s => document.querySelector(s);
 const STUDIO_URL = location.origin + location.pathname;
+const params = new URLSearchParams(location.search);
+const store = { get(k){ try { return localStorage.getItem('vb.' + k); } catch(e){ return null; } }, set(k, v){ try { localStorage.setItem('vb.' + k, v); } catch(e){} } };
 
 /* ---------- small Supabase client (auth, database, storage) ---------- */
 const sb = {
@@ -253,6 +348,7 @@ const sb = {
 /* ---------- views ---------- */
 let mode = 'in';
 function showAuth(msg, ok){
+  $('#proHint').hidden = params.get('plan') !== 'pro';
   $('#authCard').hidden = false; $('#app').hidden = true; $('#who').hidden = true; $('#resetCard').hidden = true;
   setMsg('#authMsg', msg || '', ok ? 'ok' : (msg ? 'err' : ''));
 }
@@ -274,7 +370,7 @@ $('#authForm').addEventListener('submit', async e => {
   const email = $('#aEmail').value.trim(), pass = $('#aPass').value, name = $('#aName').value.trim();
   if (!email || !email.includes('@')) return setMsg('#authMsg', 'Enter your email address.', 'err');
   if (pass.length < 8) return setMsg('#authMsg', 'Use a password with at least 8 characters.', 'err');
-  if (mode === 'up' && !name) return setMsg('#authMsg', 'Enter the producer name artists will see.', 'err');
+  if (mode === 'up' && !name) return setMsg('#authMsg', 'Enter your producer or artist name.', 'err');
   $('#authBtn').disabled = true; setMsg('#authMsg', mode === 'up' ? 'Creating your account…' : 'Signing in…');
   try {
     if (mode === 'up'){
@@ -335,8 +431,12 @@ async function enterApp(){
   } catch(err){ if (err.status === 401) return; }
   $('#whoName').textContent = profile.producer_name || (sb.session.user.email || '');
   $('#pName').value = profile.producer_name || '';
+  await loadPlan();
   await loadBeats();
   await loadInbox();
+  await loadArtist();
+  setSide(store.get('side') || 'prod');
+  if (params.get('plan') === 'pro'){ history.replaceState(null, '', location.pathname); if (!isPro()) upsell(); }
 }
 async function loadBeats(){
   try { beats = await sb.req('/rest/v1/beats?select=*&order=created_at.desc') || []; renderBeats(); }
@@ -373,11 +473,11 @@ const drop = $('#drop');
 ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
 drop.addEventListener('drop', e => pick(e.dataTransfer.files[0]));
 
-function prog(label, frac){
-  $('#prog').hidden = false;
-  if (label) $('#progLabel').textContent = label;
+function prog(label, frac, id = 'prog'){
+  $('#' + id).hidden = false;
+  if (label) $('#' + id + 'Label').textContent = label;
   const p = Math.round(Math.max(0, Math.min(1, frac))*100);
-  $('#progPct').textContent = p + '%'; $('#progFill').style.width = p + '%'; $('#prog').setAttribute('aria-valuenow', p);
+  $('#' + id + 'Pct').textContent = p + '%'; $('#' + id + 'Fill').style.width = p + '%'; $('#' + id).setAttribute('aria-valuenow', p);
 }
 const frame = () => new Promise(r => setTimeout(r, 0));
 function decodeAudio(buf){
@@ -399,10 +499,10 @@ async function toMp3(ab, onProg){
   const end = enc.flush(); if (end.length) out.push(new Uint8Array(end));
   return new Blob(out, {type:'audio/mpeg'});
 }
-function putObject(path, blob, onProg){
+function putObject(path, blob, onProg, bucket = 'beats'){
   return new Promise((res, rej) => {
     const x = new XMLHttpRequest();
-    x.open('POST', SB_URL + '/storage/v1/object/beats/' + path);
+    x.open('POST', SB_URL + '/storage/v1/object/' + bucket + '/' + path);
     x.setRequestHeader('apikey', SB_KEY);
     x.setRequestHeader('Authorization', 'Bearer ' + sb.session.access_token);
     x.setRequestHeader('Content-Type', 'audio/mpeg');
@@ -424,6 +524,7 @@ function uuid(){ if (crypto.randomUUID) return crypto.randomUUID(); const b = cr
 let uploading = false;
 $('#uploadBtn').onclick = async () => {
   if (!picked || uploading) return;
+  if (!isPro() && activeLinks() >= FREE.links) return upsell('links');
   const title = $('#title').value.trim() || prettify(picked.name);
   uploading = true; $('#uploadBtn').disabled = true; setMsg('#upMsg', '');
   const id = uuid(), path = sb.uid + '/' + id + '.mp3';
@@ -450,15 +551,18 @@ $('#uploadBtn').onclick = async () => {
     }
     if (!row) throw new Error('Couldn’t create a link. Try again.');
     prog('Done', 1);
-    beats.unshift(row); renderBeats();
+    beats.unshift(row); renderBeats(); renderPlan();
     picked = null; $('#chosen').hidden = true;
     setTimeout(() => { $('#prog').hidden = true; }, 600);
     setMsg('#upMsg', '“' + title + '” is up. Copy its link below and send it to an artist.', 'ok');
   } catch(err){
     if (stored){ try { await sb.req('/storage/v1/object/beats/' + path, {method:'DELETE'}); } catch(e){} }
     $('#prog').hidden = true;
-    const m = /decode|Unable to decode|EncodingError/i.test(String(err && (err.name + err.message))) ? 'Couldn’t read that audio file. Try exporting it again as MP3 or WAV.' : err.message;
-    setMsg('#upMsg', m, 'err');
+    if (isLimit(err)){ $('#prog').hidden = true; setMsg('#upMsg', ''); upsell(isLimit(err)); }
+    else {
+      const m = /decode|Unable to decode|EncodingError/i.test(String(err && (err.name + err.message))) ? 'Couldn’t read that audio file. Try exporting it again as MP3 or WAV.' : err.message;
+      setMsg('#upMsg', m, 'err');
+    }
   }
   uploading = false; $('#uploadBtn').disabled = false;
 };
@@ -488,8 +592,8 @@ function renderBeats(){
     const test = document.createElement('a'); test.className = 'btn small'; test.href = linkFor(b); test.target = '_blank'; test.rel = 'noopener'; test.textContent = 'Test'; acts.append(test);
     mk(b.active ? 'Turn link off' : 'Turn link on', '', async btn => {
       btn.disabled = true;
-      try { await sb.req('/rest/v1/beats?id=eq.' + b.id, {method:'PATCH', body:{active:!b.active}, headers:{Prefer:'return=minimal'}}); b.active = !b.active; renderBeats(); }
-      catch(err){ btn.disabled = false; alert(err.message); }
+      try { await sb.req('/rest/v1/beats?id=eq.' + b.id, {method:'PATCH', body:{active:!b.active}, headers:{Prefer:'return=minimal'}}); b.active = !b.active; renderBeats(); renderPlan(); }
+      catch(err){ btn.disabled = false; if (isLimit(err)) upsell(isLimit(err)); else alert(err.message); }
     });
     let armed = null;
     mk('Delete', 'danger', async btn => {
@@ -498,7 +602,7 @@ function renderBeats(){
       try {
         await sb.req('/rest/v1/beats?id=eq.' + b.id, {method:'DELETE'});
         try { await sb.req('/storage/v1/object/beats/' + b.file_path, {method:'DELETE'}); } catch(e){}
-        beats = beats.filter(x => x !== b); renderBeats();
+        beats = beats.filter(x => x !== b); renderBeats(); renderPlan();
       } catch(err){ btn.disabled = false; alert(err.message); }
     });
     box.append(el);
@@ -612,6 +716,7 @@ function renderInbox(){
 }
 // Collaboration: turn an artist's full song into a new beat link for the next artist
 async function passToNext(s, mix, beatTitle, btn){
+  if (!isPro() && activeLinks() >= FREE.links) return upsell('links');
   const name = await askText('New link for the next artist', beatTitle + ' + ' + s.artist_name);
   if (!name) return;
   btn.disabled = true; btn.textContent = 'Making the link…';
@@ -627,17 +732,284 @@ async function passToNext(s, mix, beatTitle, btn){
       } catch(err){ if (err.status !== 409) throw err; }
     }
     if (!row) throw new Error('Couldn’t create a link.');
-    beats.unshift(row); renderBeats(); markSeen(s);
+    beats.unshift(row); renderBeats(); renderPlan(); markSeen(s);
     const first = $('#list .beat'); if (first){ first.classList.add('flashbeat'); first.scrollIntoView({behavior:'smooth', block:'center'}); }
     setMsg('#upMsg', 'New link ready: “' + name + '”. Send it to the next artist. They’ll hear ' + s.artist_name + '’s verse while they record.', 'ok');
   } catch(err){
     try { await sb.req('/storage/v1/object/beats/' + path, {method:'DELETE'}); } catch(e){}
-    alert('Couldn’t make the new link: ' + err.message);
+    if (isLimit(err)) upsell(isLimit(err)); else alert('Couldn’t make the new link: ' + err.message);
   }
   btn.disabled = false; btn.textContent = 'Pass to next artist';
 }
 $('#refreshInbox').onclick = async () => { $('#refreshInbox').disabled = true; await loadInbox(); $('#refreshInbox').disabled = false; };
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !$('#app').hidden && sb.session) loadInbox(); });
+
+/* ---------- plan: Free or Pro ---------- */
+const PADDLE = {
+  token: window.VB_PADDLE_TOKEN || 'live_49037673d052ead1a5832e97c22',
+  monthly: 'pri_01m5t3t4zmhc2n092shqzhxv2e',
+  yearly: 'pri_01m5t3vt5vzc417nwbz9c25xe4'
+};
+const FREE = {links:3, beats:3, songs:3};
+const PRO_STATES = ['active', 'trialing', 'past_due', 'comp'];
+let plan = null;
+const isPro = () => !!plan && PRO_STATES.includes(plan.status);
+const activeLinks = () => beats.filter(b => b.active).length;
+function isLimit(err){
+  const m = String((err && (err.message || (err.data && err.data.message))) || '');
+  const k = m.match(/FREE_LIMIT_(LINKS|BEATS|SONGS)/);
+  return k ? k[1].toLowerCase() : null;
+}
+async function loadPlan(){
+  try { const rows = await sb.req('/rest/v1/subscriptions?select=*&owner=eq.' + sb.uid); plan = rows && rows[0] || null; }
+  catch(e){ plan = null; }
+  renderPlan();
+}
+function renderPlan(){
+  const pro = isPro(), name = $('#planName'), btns = $('#planBtns'), use = $('#usage');
+  name.innerHTML = ''; btns.innerHTML = ''; use.innerHTML = '';
+  if (pro){
+    name.append('VerseBack Pro');
+    const pill = document.createElement('span'); pill.className = 'pill'; pill.textContent = plan.status === 'comp' ? 'On the house' : 'Pro'; name.append(pill);
+    let line = 'Unlimited beat links, beats and songs.';
+    if (plan.status === 'past_due') line = 'Your last payment didn’t go through. Update your card so you keep Pro.';
+    else if (plan.cancel_at) line = 'Cancelled. You keep Pro until ' + fmtDay(plan.cancel_at) + '.';
+    else if (plan.current_period_end && plan.status !== 'comp') line += ' Renews ' + fmtDay(plan.current_period_end) + '.';
+    const u = document.createElement('p'); u.className = 'proline'; u.textContent = line; use.append(u);
+    if (plan.paddle_customer_id){
+      const m = document.createElement('button'); m.type = 'button'; m.className = 'small'; m.textContent = 'Manage subscription';
+      m.onclick = () => openPortal(m); btns.append(m);
+    }
+    return;
+  }
+  name.textContent = 'Free plan';
+  const chip = (txt, full) => { const c = document.createElement('span'); c.className = 'use' + (full ? ' full' : ''); c.textContent = txt; use.append(c); };
+  const L = activeLinks(), B = abeats.length, S = songs.length;
+  chip('Links on: ' + L + ' of ' + FREE.links, L >= FREE.links);
+  chip('Artist beats: ' + B + ' of ' + FREE.beats, B >= FREE.beats);
+  chip('Songs: ' + S + ' of ' + FREE.songs, S >= FREE.songs);
+  const go = document.createElement('button'); go.type = 'button'; go.className = 'primary small'; go.textContent = 'Go Pro';
+  go.onclick = () => upsell(); btns.append(go);
+}
+const fmtDay = d => new Date(d).toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
+function upsell(kind){
+  const why = {
+    links: 'The free plan has ' + FREE.links + ' beat links on at a time. Turn one off, or go Pro for unlimited links.',
+    beats: 'The free plan holds ' + FREE.beats + ' beats in your Artist studio. Delete one, or go Pro for unlimited beats.',
+    songs: 'The free plan holds ' + FREE.songs + ' songs. Delete one, or go Pro for unlimited songs.'
+  }[kind];
+  $('#uTitle').textContent = kind ? 'You hit the free limit' : 'Go Pro';
+  $('#uBody').textContent = (why ? why + ' ' : '') + 'Pro gives you unlimited beat links, beats and songs, and covers your Producer and Artist studio.';
+  $('#upModal').hidden = false; $('#uMonthly').focus();
+}
+$('#uCancel').onclick = () => { $('#upModal').hidden = true; };
+$('#uMonthly').onclick = () => { $('#upModal').hidden = true; checkout('monthly'); };
+$('#uYearly').onclick = () => { $('#upModal').hidden = true; checkout('yearly'); };
+
+let paddleReady = null;
+function loadPaddle(){
+  if (paddleReady) return paddleReady;
+  paddleReady = new Promise((res, rej) => {
+    if (window.Paddle) return res();
+    const sc = document.createElement('script'); sc.src = 'https://cdn.paddle.com/paddle/v2/paddle.js';
+    sc.onload = res; sc.onerror = () => rej(new Error('The checkout didn’t load. Check your connection and try again.'));
+    document.head.append(sc);
+  }).then(() => {
+    if (PADDLE.token.startsWith('test_')) Paddle.Environment.set('sandbox');
+    Paddle.Initialize({token: PADDLE.token, eventCallback: onPaddle});
+  });
+  paddleReady.catch(() => { paddleReady = null; });
+  return paddleReady;
+}
+async function checkout(which){
+  setMsg('#planMsg', 'Opening checkout…');
+  try {
+    await loadPaddle();
+    Paddle.Checkout.open({
+      items: [{priceId: PADDLE[which], quantity: 1}],
+      customer: {email: sb.session.user.email},
+      customData: {user_id: sb.uid},
+      settings: {displayMode: 'overlay', theme: 'dark', allowLogout: false}
+    });
+    setMsg('#planMsg', '');
+  } catch(err){ setMsg('#planMsg', err.message, 'err'); }
+}
+function onPaddle(e){
+  if (!e || !e.name) return;
+  if (e.name === 'checkout.completed') finishUpgrade(e.data && e.data.transaction_id);
+  if (e.name === 'checkout.error') setMsg('#planMsg', 'The checkout hit a problem. Try again in a minute.', 'err');
+}
+async function finishUpgrade(tx){
+  setMsg('#planMsg', 'Payment done. Switching your account to Pro…');
+  for (let i = 0; i < 20 && !isPro(); i++){
+    if (tx && i % 3 === 0){ try { await sb.req('/functions/v1/paddle', {method:'POST', body:{action:'sync', transaction_id:tx}}); } catch(e){} }
+    await loadPlan();
+    if (!isPro()) await new Promise(r => setTimeout(r, 1500));
+  }
+  if (isPro()){ setMsg('#planMsg', 'You’re on VerseBack Pro. Thank you for supporting VerseBack!', 'ok'); renderBeats(); }
+  else setMsg('#planMsg', 'Your payment went through, but your plan is still updating. Refresh this page in a minute.', 'ok');
+}
+async function openPortal(btn){
+  btn.disabled = true; setMsg('#planMsg', 'Opening your subscription…');
+  try {
+    const d = await sb.req('/functions/v1/paddle', {method:'POST', body:{action:'portal'}});
+    if (!d || !d.url) throw new Error('No link came back.');
+    setMsg('#planMsg', ''); location.href = d.url;
+  } catch(err){ setMsg('#planMsg', 'Couldn’t open your subscription: ' + err.message, 'err'); }
+  btn.disabled = false;
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !$('#app').hidden && sb.session) loadPlan(); });
+
+/* ---------- Producer / Artist sides ---------- */
+function setSide(which){
+  const art = which === 'art';
+  $('#prodSide').hidden = art; $('#artSide').hidden = !art;
+  $('#sideProd').classList.toggle('on', !art); $('#sideArt').classList.toggle('on', art);
+  $('#sideProd').setAttribute('aria-selected', !art); $('#sideArt').setAttribute('aria-selected', art);
+  store.set('side', art ? 'art' : 'prod');
+}
+$('#sideProd').onclick = () => setSide('prod');
+$('#sideArt').onclick = () => setSide('art');
+
+/* ---------- Artist studio: my beats and songs ---------- */
+let abeats = [], songs = [];
+async function loadArtist(){
+  try {
+    [abeats, songs] = await Promise.all([
+      sb.req('/rest/v1/artist_beats?select=*&order=created_at.desc'),
+      sb.req('/rest/v1/artist_songs?select=id,beat_id,title,created_at,updated_at&order=updated_at.desc')
+    ]);
+    abeats = abeats || []; songs = songs || [];
+  } catch(err){
+    const m = document.createElement('div'); m.className = 'msg err'; m.textContent = 'Couldn’t load your Artist studio: ' + err.message;
+    $('#songs').innerHTML = ''; $('#songs').append(m); $('#abeats').innerHTML = ''; return;
+  }
+  renderArtist(); renderPlan();
+}
+const songLink = s => location.origin + '/s/' + s.id;
+function renderArtist(){
+  const titles = Object.fromEntries(abeats.map(b => [b.id, b.title]));
+  const sb_ = $('#songs'); sb_.innerHTML = '';
+  if (!songs.length){
+    const e = document.createElement('div'); e.className = 'empty';
+    e.textContent = abeats.length ? 'No songs yet. Tap “New song” on one of your beats below to start recording.' : 'Add a beat below, then tap “New song” on it to start recording.';
+    sb_.append(e);
+  }
+  for (const s of songs){
+    const el = document.createElement('div'); el.className = 'beat song';
+    el.innerHTML = '<div class="btop"><div><div class="btitle" role="button" tabindex="0" title="Tap to rename"></div><div class="bmeta"></div></div></div><div class="bactions"></div>';
+    const t = el.querySelector('.btitle'); t.textContent = s.title;
+    t.onclick = t.onkeydown = async e => { if (e.type === 'keydown' && e.key !== 'Enter') return; const n = await askText('Rename song', s.title); if (n && n !== s.title){ try { await sb.req('/rest/v1/artist_songs?id=eq.' + s.id, {method:'PATCH', body:{title:n}, headers:{Prefer:'return=minimal'}}); s.title = n; renderArtist(); } catch(err){ alert(err.message); } } };
+    el.querySelector('.bmeta').textContent = 'on ' + (titles[s.beat_id] || 'a beat') + ' · updated ' + fmtWhen(s.updated_at);
+    const acts = el.querySelector('.bactions');
+    const open = document.createElement('a'); open.className = 'btn small primary'; open.href = songLink(s); open.textContent = 'Open in the booth'; acts.append(open);
+    let armed = null;
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'small danger'; del.textContent = 'Delete';
+    del.onclick = async () => {
+      if (!armed){ del.textContent = 'Sure? Tap again'; del.classList.add('confirm'); armed = setTimeout(() => { armed = null; del.textContent = 'Delete'; del.classList.remove('confirm'); }, 3000); return; }
+      clearTimeout(armed); del.disabled = true;
+      try {
+        await removeFolder(sb.uid + '/songs/' + s.id + '/');
+        await sb.req('/rest/v1/artist_songs?id=eq.' + s.id, {method:'DELETE'});
+        songs = songs.filter(x => x !== s); renderArtist(); renderPlan();
+      } catch(err){ del.disabled = false; alert(err.message); }
+    };
+    acts.append(del); sb_.append(el);
+  }
+
+  const box = $('#abeats'); box.innerHTML = '';
+  if (!abeats.length){ const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'No beats yet. Add one above.'; box.append(e); }
+  for (const b of abeats){
+    const el = document.createElement('div'); el.className = 'beat';
+    el.innerHTML = '<div class="btop"><div><div class="btitle" role="button" tabindex="0" title="Tap to rename"></div><div class="bmeta"></div></div></div><div class="bactions"></div>';
+    const t = el.querySelector('.btitle'); t.textContent = b.title;
+    t.onclick = t.onkeydown = async e => { if (e.type === 'keydown' && e.key !== 'Enter') return; const n = await askText('Rename beat', b.title); if (n && n !== b.title){ try { await sb.req('/rest/v1/artist_beats?id=eq.' + b.id, {method:'PATCH', body:{title:n}, headers:{Prefer:'return=minimal'}}); b.title = n; renderArtist(); } catch(err){ alert(err.message); } } };
+    const n = songs.filter(x => x.beat_id === b.id).length;
+    el.querySelector('.bmeta').textContent = fmtDur(b.duration_sec) + ' · added ' + fmtDate(b.created_at) + (n ? ' · ' + n + (n === 1 ? ' song' : ' songs') : '');
+    const acts = el.querySelector('.bactions');
+    const ns = document.createElement('button'); ns.type = 'button'; ns.className = 'small primary'; ns.textContent = 'New song';
+    ns.onclick = () => newSong(b, ns); acts.append(ns);
+    let armed = null;
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'small danger'; del.textContent = n ? 'Delete beat and its songs' : 'Delete';
+    del.onclick = async () => {
+      if (!armed){ const old = del.textContent; del.textContent = 'Sure? Tap again'; del.classList.add('confirm'); armed = setTimeout(() => { armed = null; del.textContent = old; del.classList.remove('confirm'); }, 3000); return; }
+      clearTimeout(armed); del.disabled = true;
+      try {
+        for (const s of songs.filter(x => x.beat_id === b.id)) await removeFolder(sb.uid + '/songs/' + s.id + '/');
+        await sb.req('/rest/v1/artist_beats?id=eq.' + b.id, {method:'DELETE'});
+        try { await sb.req('/storage/v1/object/artist', {method:'DELETE', body:{prefixes:[b.file_path]}}); } catch(e){}
+        songs = songs.filter(x => x.beat_id !== b.id); abeats = abeats.filter(x => x !== b);
+        renderArtist(); renderPlan();
+      } catch(err){ del.disabled = false; alert(err.message); }
+    };
+    acts.append(del); box.append(el);
+  }
+}
+async function removeFolder(prefix){
+  const items = await sb.req('/storage/v1/object/list/artist', {method:'POST', body:{prefix, limit:1000, offset:0}}) || [];
+  const paths = items.filter(x => x && x.name).map(x => prefix + x.name);
+  if (paths.length) await sb.req('/storage/v1/object/artist', {method:'DELETE', body:{prefixes:paths}});
+}
+async function newSong(b, btn){
+  if (!isPro() && songs.length >= FREE.songs) return upsell('songs');
+  btn.disabled = true;
+  try {
+    const id = uuid(), n = songs.filter(x => x.beat_id === b.id).length;
+    await sb.req('/rest/v1/artist_songs', {method:'POST', headers:{Prefer:'return=minimal'}, body:{id, beat_id:b.id, title: b.title + (n ? ' (take ' + (n + 1) + ')' : '')}});
+    location.href = location.origin + '/s/' + id;
+  } catch(err){ btn.disabled = false; if (isLimit(err)) upsell(isLimit(err)); else alert(err.message); }
+}
+
+// Add a beat (artist side)
+let apicked = null, auploading = false;
+function apick(file){
+  if (!file) return;
+  if (!(file.type.startsWith('audio/') || AUDIO_RE.test(file.name))) return setMsg('#aupMsg', 'That isn’t an audio file. Choose an MP3 or WAV.', 'err');
+  if (file.size > 400*1024*1024) return setMsg('#aupMsg', 'That file is too big. Keep beats under 400 MB.', 'err');
+  apicked = file; $('#achosen').hidden = false;
+  $('#afname').textContent = file.name + ' · ' + (file.size/1048576).toFixed(1) + ' MB';
+  $('#atitle').value = prettify(file.name); setMsg('#aupMsg', '');
+}
+$('#afile').addEventListener('change', e => { apick(e.target.files[0]); e.target.value = ''; });
+const adrop = $('#adrop');
+['dragenter','dragover'].forEach(ev => adrop.addEventListener(ev, e => { e.preventDefault(); adrop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => adrop.addEventListener(ev, e => { e.preventDefault(); adrop.classList.remove('over'); }));
+adrop.addEventListener('drop', e => apick(e.dataTransfer.files[0]));
+$('#aUploadBtn').onclick = async () => {
+  if (!apicked || auploading) return;
+  if (!$('#alic').checked) return setMsg('#aupMsg', 'Tick the box to confirm you made this beat or have a license for it.', 'err');
+  if (!isPro() && abeats.length >= FREE.beats) return upsell('beats');
+  const title = $('#atitle').value.trim() || prettify(apicked.name);
+  auploading = true; $('#aUploadBtn').disabled = true; setMsg('#aupMsg', '');
+  const id = uuid(), path = sb.uid + '/beats/' + id + '.mp3';
+  let stored = false;
+  try {
+    await sb.fresh();
+    prog('Reading the beat…', 0, 'aprog'); await frame();
+    const bytes = await apicked.arrayBuffer();
+    const audio = await decodeAudio(bytes.slice(0));
+    const isMp3 = /mpeg|mp3/.test(apicked.type) || /\.mp3$/i.test(apicked.name);
+    let blob;
+    if (isMp3 && apicked.size <= 25*1024*1024){ blob = new Blob([bytes], {type:'audio/mpeg'}); prog('Reading the beat…', 1, 'aprog'); }
+    else { prog('Turning it into an MP3…', 0, 'aprog'); blob = await toMp3(audio, p => prog(null, p, 'aprog')); }
+    prog('Uploading…', 0, 'aprog');
+    await putObject(path, blob, p => prog(null, p, 'aprog'), 'artist');
+    stored = true;
+    const r = await sb.req('/rest/v1/artist_beats', {method:'POST', headers:{Prefer:'return=representation'},
+      body:{id, title, file_path:path, size_bytes:blob.size, duration_sec:Math.round(audio.duration*10)/10, licensed:true}});
+    prog('Done', 1, 'aprog');
+    abeats.unshift(r[0]); renderArtist(); renderPlan();
+    apicked = null; $('#achosen').hidden = true; $('#alic').checked = false;
+    setTimeout(() => { $('#aprog').hidden = true; }, 600);
+    setMsg('#aupMsg', '“' + title + '” is in your beats. Tap “New song” to start recording on it.', 'ok');
+  } catch(err){
+    if (stored){ try { await sb.req('/storage/v1/object/artist', {method:'DELETE', body:{prefixes:[path]}}); } catch(e){} }
+    $('#aprog').hidden = true;
+    if (isLimit(err)){ setMsg('#aupMsg', ''); upsell(isLimit(err)); }
+    else setMsg('#aupMsg', /decode|EncodingError/i.test(String(err && (err.name + err.message))) ? 'Couldn’t read that audio file. Try exporting it again as MP3 or WAV.' : err.message, 'err');
+  }
+  auploading = false; $('#aUploadBtn').disabled = false;
+};
 
 /* ---------- start ---------- */
 async function start(){
@@ -659,7 +1031,7 @@ async function start(){
   showAuth();
 }
 start();
-window.__studio = {sb, get beats(){ return beats; }, get subs(){ return subs; }};
+window.__studio = {sb, get beats(){ return beats; }, get subs(){ return subs; }, get plan(){ return plan; }, get abeats(){ return abeats; }, get songs(){ return songs; }};
 })();
 </script>
 </body>

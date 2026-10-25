@@ -101,6 +101,10 @@ summary{cursor:pointer;font-weight:600}
 .dialog .acts{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:16px}
 .drop{outline:3px dashed var(--brass);outline-offset:-8px}
 .logoback{color:var(--brass)}
+.logorow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.boothpill{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.12em;color:var(--brass-ink);background:var(--brass);border-radius:999px;padding:5px 9px}
+.tag b{color:var(--text);font-weight:600}
+.tag a{color:var(--brass)}
 .hot{font:600 11px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--rec);border-radius:4px;padding:4px 6px}
 .status.warn{color:#ffb3b3}
 .artist #loadBtn,.artist #demoBtn{display:none}
@@ -188,6 +192,9 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
 .syncpanel .hint{margin:0}
 .seg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:13px}
 .dialog .acts .grow{margin-right:auto}
+.foot{border-top:1px solid var(--line);margin-top:8px;padding-top:14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--dim);font-size:13px}
+.foot a{color:var(--muted);text-decoration:none;margin-right:14px;line-height:2}
+.foot a:hover{color:var(--text)}
 @media (max-width:620px){
   .logo{font-size:38px}
   .transport{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -220,7 +227,7 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
     <a id="inappChrome" class="btn primary" hidden>Open in Chrome</a>
   </div>
   <header>
-    <h1 class="logo"><span class="light" id="light" aria-hidden="true"></span><span>VERSE<span class="logoback">BACK</span></span></h1>
+    <div class="logorow"><h1 class="logo"><span class="light" id="light" aria-hidden="true"></span><span>VERSE<span class="logoback">BACK</span></span></h1><span class="boothpill" id="boothPill" hidden>The Booth</span></div>
     <p class="tag" id="tag">Load a beat, put on headphones, hit record. Lay down a whole song right here.</p>
   </header>
 
@@ -371,6 +378,10 @@ code{font:500 13px var(--mono);color:var(--text);background:var(--panel2);paddin
       <li><b>Come back anytime</b>Your song saves on this device after every take. Got a call? Open the same link later and pick up where you left off. Download to keep a copy for good.</li>
     </ul>
   </section>
+  <footer class="foot">
+    <div><a href="/studio">Studio</a><a href="/pricing">Pricing</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a><a href="mailto:support@verseback.com">Contact</a></div>
+    <div>© 2026 ASW Studio. VerseBack™</div>
+  </footer>
 </div>
 
 <div class="dock" id="dock" hidden>
@@ -416,7 +427,8 @@ const S = {
   comp:0, compTouched:false, undo:[], preroll:2, headphonesOk:false,
   beatVol:100, vocalVol:100, autoEst:null, phones:null, hotUntil:0,
   beatBytes:null, isDemo:true, beatDirty:false, beatMetaText:'', removedIds:[], saveReady:false, interrupted:false, micSrc:null,
-  ns:'', artist:false, isLink:false, cues:[], cueCount:0, scrubbing:false, armedId:null, punchOut:false
+  ns:'', artist:false, isLink:false, cues:[], cueCount:0, scrubbing:false, armedId:null, punchOut:false,
+  song:null, cpaths:{}, cloudGone:[], cloudOk:false
 };
 const BT_DEFAULT_MS = 250;
 const store = {
@@ -466,6 +478,7 @@ function computeAutoGain(t){
 const fmt = s => { s = Math.max(0, s); const m = Math.floor(s/60); const r = s - m*60; return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1); };
 const volToGain = v => Math.pow(v/100, 2);
 const setStatus = (t, warn) => { const el = $('#status'); el.textContent = t; el.classList.toggle('warn', !!warn); };
+const setTag = h => { $('#tag').innerHTML = h; };
 const safeName = s => (s || 'song').replace(/[\\/:*?"<>|]+/g, '').trim() || 'song';
 
 function ensureCtx(){
@@ -592,20 +605,25 @@ async function saveSession(){
   if (!S.beat || !S.saveReady) return;
   try {
     if (S.beatDirty){ await DB.set('beat', (S.isDemo || S.isLink) ? null : S.beatBytes); S.beatDirty = false; }
-    for (const t of S.tracks) if (t.dirty){ await DB.set('pcm:' + t.id, toI16(t.data)); t.dirty = false; }
-    const gone = S.removedIds.splice(0); for (const id of gone) await DB.del('pcm:' + id);
-    await DB.set('session', {
-      v:1, beatName:S.beatName, beatMeta:S.beatMetaText, isDemo:S.isDemo, beatVol:S.beatVol, vocalVol:S.vocalVol,
-      pos: Math.min(S.pos, S.beat.duration), layerCount:S.layerCount, nextId:S.nextId, savedAt:Date.now(),
-      cues: S.cues.map(c => ({t:c.t, name:c.name})), cueCount: S.cueCount || 0, armedId: S.armedId,
-      tracks: S.tracks.map(t => ({id:t.id, name:t.name, lead:t.lead, start:t.start, sr:S.ctx ? S.ctx.sampleRate : 48000, vol:t.vol, muted:t.muted, color:t.color, autoGain:t.autoGain}))
-    });
-    $('#saved').textContent = S.tracks.length ? 'Saved on this device' : '';
-    $('#saved').classList.remove('bad');
+    for (const t of S.tracks) if (t.dirty){ await DB.set('pcm:' + t.id, toI16(t.data)); t.dirty = false; t.cdirty = true; }
+    const gone = S.removedIds.splice(0);
+    for (const id of gone){ await DB.del('pcm:' + id); if (S.cpaths[id]){ S.cloudGone.push(S.cpaths[id]); delete S.cpaths[id]; } }
+    await DB.set('session', sessionMeta());
+    if (!S.song || !S.cloudOk){ $('#saved').textContent = S.tracks.length ? 'Saved on this device' : ''; $('#saved').classList.remove('bad'); }
+    if (S.song) queueCloud();
   } catch (e){
     $('#saved').textContent = "Couldn't save on this device. Download your song to keep it.";
     $('#saved').classList.add('bad');
   }
+}
+function sessionMeta(){
+  return {
+    v:1, beatName:S.beatName, beatMeta:S.beatMetaText, isDemo:S.isDemo, beatVol:S.beatVol, vocalVol:S.vocalVol,
+    pos: Math.min(S.pos, S.beat.duration), layerCount:S.layerCount, nextId:S.nextId, savedAt:Date.now(),
+    cues: S.cues.map(c => ({t:c.t, name:c.name})), cueCount: S.cueCount || 0, armedId: S.armedId,
+    tracks: S.tracks.map(t => ({id:t.id, name:t.name, lead:t.lead, start:t.start, sr:S.ctx ? S.ctx.sampleRate : 48000, vol:t.vol, muted:t.muted, color:t.color, autoGain:t.autoGain,
+      cpath:t.cpath || null, csr:t.csr || null, rev:t.rev || 0}))
+  };
 }
 async function restoreSession(beatAlreadyLoaded){
   let meta;
@@ -629,7 +647,9 @@ async function restoreSession(beatAlreadyLoaded){
       const pcm = await DB.get('pcm:' + tm.id); if (!pcm) continue;
       const scale = ctx.sampleRate/(tm.sr || ctx.sampleRate);
       const t = {id:tm.id, lead:tm.lead, name:tm.name, start:Math.round(tm.start*scale), data:fromI16(pcm, tm.sr || ctx.sampleRate, ctx.sampleRate),
-        vol:tm.vol, muted:tm.muted, color:tm.color, buf:null, peaks:null, node:null, autoGain:tm.autoGain || 1, dirty: scale !== 1};
+        vol:tm.vol, muted:tm.muted, color:tm.color, buf:null, peaks:null, node:null, autoGain:tm.autoGain || 1, dirty: scale !== 1,
+        cpath:tm.cpath || null, csr:tm.csr || null, rev:tm.rev || 0};
+      if (t.cpath) S.cpaths[t.id] = t.cpath;
       S.tracks.push(t); attachTrackNode(t);
     }
     S.nextId = Math.max(meta.nextId || 1, ...S.tracks.map(t => t.id + 1));
@@ -1248,7 +1268,7 @@ async function askSend(err){
   const p = ask({title:'Send to ' + who,
     body:'<p>Your full song and each take go straight to ' + esc(who) + '.</p>'
       + '<label class="mlabel">Your artist name<input class="fld" id="sName" maxlength="60" autocomplete="nickname" value="' + esc(store.get('artistName') || '') + '"></label>'
-      + '<label class="mlabel">Note for ' + esc(who) + ' (optional)<input class="fld" id="sNote" maxlength="300" placeholder="Hook is rough, I’ll redo it"></label>'
+      + '<label class="mlabel">Message for ' + esc(who) + ' (optional)<input class="fld" id="sNote" maxlength="300" placeholder="e.g. Verse 2 is the keeper, hook is rough"></label>'
       + '<p class="merr" id="sErr">' + esc(err || '') + '</p>',
     ok:'Send', cancel:'Cancel'});
   const n = $('#sName'), nt = $('#sNote');
@@ -1738,8 +1758,10 @@ async function startCloud(code){
       setStatus('This link is not active right now.', true);
       return;
     }
-    document.title = b.title + ' · VerseBack';
+    document.title = b.title + ' · The Booth · VerseBack';
     if (b.producer_name){ $('#beatBy').textContent = 'Produced by ' + b.producer_name; $('#beatBy').hidden = false; }
+    $('#boothPill').hidden = false;
+    setTag('Recording for <b>' + esc(b.producer_name || 'the producer') + '’s</b> studio. Put on headphones, hit record, and lay down your song.');
     S.cloud = {code, title: b.title, producer: b.producer_name || 'the producer'};
     $('#sendLabel').textContent = 'Send to ' + (b.producer_name || 'producer');
     $('#sendWho').textContent = b.producer_name || 'the producer';
@@ -1761,6 +1783,158 @@ async function startCloud(code){
     setStatus("Couldn't load the beat.", true);
   }
 }
+
+/* ---------- Artist songs saved to the account: verseback.com/s/SONG-ID ---------- */
+const au = {
+  session: null,
+  load(){ try { this.session = JSON.parse(localStorage.getItem('vb.session') || 'null'); } catch(e){ this.session = null; } return this.session; },
+  save(s){ this.session = s; try { localStorage.setItem('vb.session', JSON.stringify(s)); } catch(e){} },
+  get uid(){ return this.session && this.session.user && this.session.user.id; },
+  async refresh(){
+    if (!this.session || !this.session.refresh_token) return false;
+    try {
+      const r = await fetch(SB_URL + '/auth/v1/token?grant_type=refresh_token', {method:'POST', headers:{apikey:SB_KEY, 'Content-Type':'application/json'}, body:JSON.stringify({refresh_token:this.session.refresh_token})});
+      if (!r.ok) return false;
+      const d = await r.json();
+      this.save({access_token:d.access_token, refresh_token:d.refresh_token, expires_at: d.expires_at || Math.floor(Date.now()/1000) + (d.expires_in || 3600), user:d.user || this.session.user});
+      return true;
+    } catch(e){ return false; }
+  },
+  async fresh(){ this.load(); const s = this.session; if (s && s.expires_at && Date.now()/1000 > s.expires_at - 90) await this.refresh(); },
+  async fetch(path, opts = {}){
+    await this.fresh();
+    const go = () => {
+      const h = Object.assign({apikey:SB_KEY}, opts.headers || {});
+      if (this.session) h.Authorization = 'Bearer ' + this.session.access_token;
+      let body = opts.body;
+      if (body !== undefined && !(body instanceof Blob) && typeof body !== 'string'){ h['Content-Type'] = 'application/json'; body = JSON.stringify(body); }
+      return fetch(SB_URL + path, {method:opts.method || 'GET', headers:h, body});
+    };
+    let r = await go();
+    if (r.status === 401 || r.status === 403 && /jwt|expired/i.test(r.headers.get('www-authenticate') || '')){ if (await this.refresh()) r = await go(); }
+    return r;
+  },
+  async json(path, opts){
+    const r = await this.fetch(path, opts);
+    const t = await r.text(); let d = null; try { d = t ? JSON.parse(t) : null; } catch(e){}
+    if (!r.ok){ const e = new Error((d && (d.message || d.msg || d.error)) || ('Error ' + r.status)); e.status = r.status; throw e; }
+    return d;
+  }
+};
+const encPath = p => p.split('/').map(encodeURIComponent).join('/');
+async function signArtist(path){
+  const d = await au.json('/storage/v1/object/sign/artist/' + encPath(path), {method:'POST', body:{expiresIn:3600}});
+  const rel = d && (d.signedURL || d.signedUrl); if (!rel) throw new Error('No signed link');
+  return /^https?:/.test(rel) ? rel : SB_URL + '/storage/v1' + rel;
+}
+function songIdFromUrl(){
+  const m = location.pathname.match(/^\/s\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i);
+  return m ? m[1].toLowerCase() : null;
+}
+function setCloudLabel(text, bad){ $('#saved').textContent = text; $('#saved').classList.toggle('bad', !!bad); }
+async function startSong(id){
+  S.artist = true; S.isLink = true; S.isDemo = false; S.ns = 's:' + id + ':';
+  document.body.classList.add('artist');
+  $('#boothPill').hidden = false;
+  setTag('Your studio. Put on headphones and record. Every take saves to your account. <a href="/studio">Back to my Studio</a>');
+  $('#beatName').textContent = 'Opening your song…';
+  setStatus('Loading your song…');
+  au.load();
+  if (!au.uid){
+    $('#beatName').textContent = 'Sign in to open this song';
+    $('#beatMeta').innerHTML = 'This song lives in your VerseBack account. <a href="/studio" style="color:var(--brass)">Sign in to your Studio</a>, then open it again.';
+    setStatus('Sign in first.', true); return;
+  }
+  try {
+    ensureCtx();
+    const rows = await au.json('/rest/v1/artist_songs?id=eq.' + id + '&select=id,title,session,updated_at,beat:artist_beats(title,file_path)');
+    const row = rows && rows[0];
+    if (!row || !row.beat){
+      $('#beatName').textContent = 'This song isn’t in your account';
+      $('#beatMeta').innerHTML = 'It may have been deleted, or you’re signed in with a different account. <a href="/studio" style="color:var(--brass)">Go to my Studio</a>';
+      setStatus('Song not found.', true); return;
+    }
+    S.song = {id, title: row.title, uid: au.uid, lastPushed: ''};
+    document.title = row.title + ' · The Booth · VerseBack';
+    $('#beatBy').textContent = 'Beat: ' + row.beat.title; $('#beatBy').hidden = false;
+    $('#beatName').textContent = 'Loading ' + row.title + '…';
+    const url = await signArtist(row.beat.file_path);
+    const ab = await fetchBeat(url, p => { $('#beatName').textContent = 'Loading ' + row.title + '… ' + Math.round(p*100) + '%'; });
+    const buf = await decode(ab);
+    applyBeat(buf, row.title, '');
+    let local = null; try { local = await DB.get('session'); } catch(e){}
+    const cloud = row.session;
+    const cloudNewer = cloud && cloud.tracks && (!local || (cloud.savedAt || 0) > (local.savedAt || 0) + 1000);
+    if (cloudNewer) await pullCloud(cloud);
+    const restored = await restoreSession(true);
+    S.saveReady = true; S.cloudOk = true;
+    if (!restored) setStatus('Beat loaded. Put on headphones and hit Record vocals.');
+    if (S.tracks.length) setCloudLabel('Saved to your account');
+    if (!cloudNewer && local && local.tracks && local.tracks.length) queueCloud(500);   // changes made offline go up now
+  } catch(e){
+    $('#beatName').textContent = 'Couldn’t open this song';
+    $('#beatMeta').innerHTML = 'Check your connection and reload. <a href="/studio" style="color:var(--brass)">Back to my Studio</a>';
+    setStatus('Couldn’t load the song.', true);
+  }
+}
+async function pullCloud(meta){
+  const list = meta.tracks.filter(t => t.cpath);
+  let i = 0;
+  for (const tm of list){
+    i++; $('#beatName').textContent = 'Loading your takes… ' + i + ' of ' + list.length;
+    try {
+      const r = await fetch(await signArtist(tm.cpath));
+      if (!r.ok) throw new Error(r.status);
+      await DB.set('pcm:' + tm.id, new Int16Array(await r.arrayBuffer()));
+      tm.sr = tm.csr || tm.sr;
+    } catch(e){ tm.missing = true; }
+  }
+  meta = Object.assign({}, meta, {tracks: meta.tracks.filter(t => t.cpath && !t.missing)});
+  await DB.set('session', meta);
+}
+function putArtist(path, blob){
+  return au.fetch('/storage/v1/object/artist/' + encPath(path), {method:'POST', body:blob, headers:{'Content-Type':'application/octet-stream', 'x-upsert':'true'}})
+    .then(r => { if (!r.ok) throw new Error('Upload failed (' + r.status + ')'); });
+}
+let cloudTimer = null, cloudBusy = false, cloudAgain = false;
+function queueCloud(delay = 2500){ if (!S.song) return; clearTimeout(cloudTimer); cloudTimer = setTimeout(cloudSave, delay); }
+async function cloudSave(){
+  if (!S.song || !S.beat) return;
+  if (cloudBusy){ cloudAgain = true; return; }
+  if (S.rec || S.exporting){ queueCloud(3000); return; }
+  cloudBusy = true;
+  try {
+    const need = S.tracks.filter(t => t.cdirty || !t.cpath);
+    let n = 0;
+    for (const t of need){
+      n++; setCloudLabel('Saving to your account… ' + (need.length > 1 ? n + ' of ' + need.length : ''));
+      const rev = (t.rev || 0) + 1, path = S.song.uid + '/songs/' + S.song.id + '/' + t.id + '-' + rev + '.pcm';
+      const wasDirty = t.cdirty; t.cdirty = false;
+      try { await putArtist(path, new Blob([toI16(t.data)])); }
+      catch(e){ t.cdirty = wasDirty || !t.cpath; throw e; }
+      if (t.cpath) S.cloudGone.push(t.cpath);
+      t.cpath = path; t.rev = rev; t.csr = S.ctx.sampleRate; S.cpaths[t.id] = path;
+    }
+    const meta = sessionMeta();
+    const sig = JSON.stringify(Object.assign({}, meta, {pos:0, savedAt:0}));
+    if (sig !== S.song.lastPushed){
+      await au.json('/rest/v1/artist_songs?id=eq.' + S.song.id, {method:'PATCH', body:{session:meta, updated_at:new Date().toISOString()}, headers:{Prefer:'return=minimal'}});
+      S.song.lastPushed = sig;
+      try { await DB.set('session', meta); } catch(e){}
+    }
+    const old = S.cloudGone.splice(0).filter(p => !S.tracks.some(t => t.cpath === p));
+    if (old.length){ try { await au.fetch('/storage/v1/object/artist', {method:'DELETE', body:{prefixes:old}}); } catch(e){} }
+    S.cloudOk = true;
+    setCloudLabel(S.tracks.length ? 'Saved to your account' : '');
+  } catch(e){
+    S.cloudOk = false;
+    setCloudLabel(e.status === 401 ? 'Saved on this device. Sign in to your Studio again to save to your account.' : 'Saved on this device. Will save to your account when you’re back online.', true);
+    queueCloud(15000);
+  }
+  cloudBusy = false;
+  if (cloudAgain){ cloudAgain = false; queueCloud(500); }
+}
+window.addEventListener('online', () => { if (S.song) queueCloud(500); });
 
 function linkFor(file){
   const by = ($('#byName').value || '').trim();
@@ -1809,8 +1983,9 @@ const params = new URLSearchParams(location.search);
 const linkBeat = parseLink(params);
 renderRows(); updateUI(); requestAnimationFrame(loop);
 setupInApp(); renderCues();
-const cCode = cloudCode();
+const cCode = cloudCode(), sId = songIdFromUrl();
 if (params.has('make')) startMaker();
+else if (sId) startSong(sId);
 else if (cCode) startCloud(cCode);
 else if (linkBeat) startArtist(linkBeat);
 else restoreSession().then(ok => { S.saveReady = true; if (!ok) loadDemo(); });
